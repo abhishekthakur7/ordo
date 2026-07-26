@@ -18,6 +18,7 @@ struct SettingsView: View {
             Divider().overlay(palette.divider)
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    themeSection
                     launchAtLogin
                     hotkeySection
                     dayStartSection
@@ -43,6 +44,31 @@ struct SettingsView: View {
             .foregroundStyle(palette.accent)
         }
         .padding(EdgeInsets(top: 15, leading: 18, bottom: 12, trailing: 16))
+    }
+
+    // MARK: Theme
+
+    private var themeSection: some View {
+        HStack {
+            theme.typeScale.railLine.styled(UIStrings.themeTitle)
+                .foregroundStyle(palette.ink)
+            Spacer()
+            Picker("", selection: themeBinding) {
+                ForEach(ThemeRegistry.shared.all, id: \.id) { available in
+                    Text(available.displayName).tag(available.id)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .tint(palette.accent)
+        }
+    }
+
+    private var themeBinding: Binding<ThemeID> {
+        Binding(
+            get: { model.settings.themeID },
+            set: { model.settings.themeID = $0 }
+        )
     }
 
     // MARK: Launch at login

@@ -34,6 +34,12 @@ public final class AppModel {
     /// Last hold value pushed to the chrome, so we only notify on real transitions.
     @ObservationIgnored private var lastInteractionHold = false
 
+    /// Mirrors `isAllClearedToday` as of the last `rebuild()`/`selectTab()` — the
+    /// "before" value `toggle()` compares against to detect the transition INTO
+    /// all-cleared (mirrors the mockup's `state.prevCleared`). Only meaningful
+    /// for themes with `providesCompletionFX`; harmless (never read) otherwise.
+    @ObservationIgnored private var wasAllCleared = false
+
     // MARK: Exposed row state (the single source the list binds to)
 
     /// Open (not done) Today tasks, sorted by order.
@@ -49,6 +55,12 @@ public final class AppModel {
     public var openRows: [OrdoTask] { tab == .today ? openToday : openLongterm }
     /// Done rows for the active tab.
     public var doneRows: [OrdoTask] { tab == .today ? doneToday : doneLongterm }
+
+    /// All active-tab tasks in STORED order (open and done interleaved as the
+    /// store holds them) — for themes where `showsDoneSection == false` (Arcade),
+    /// which render one flat list and dim done rows in place instead of
+    /// splitting/reflowing them into a separate section.
+    public var allRows: [OrdoTask] { store.tasks(in: tab) }
 
     // MARK: View state
 
@@ -224,6 +236,11 @@ public final class AppModel {
         guard tab != newTab else { return }
         tab = newTab
         selectedID = nil
+        // Resync the cleared-transition tracker to the newly active tab (mirrors
+        // the mockup's tab-click handler) so navigating away from an already-
+        // cleared Today and back doesn't manufacture a false transition — but
+        // also doesn't suppress a *real* re-clear discovered later via `toggle`.
+        wasAllCleared = isAllClearedToday
         sounds.play(.tabSwitch)
     }
 
@@ -318,6 +335,36 @@ public final class AppModel {
         guard !change.isEmpty else { return }
 
         sounds.play(becomingDone ? .complete : .uncheck)
+
+        guard theme.showsDoneSection else {
+            // Arcade (and any future `showsDoneSection == false` theme): done rows
+            // dim IN PLACE in stored order (`allRows`) — no reflow choreography,
+            // so a single immediate rebuild suffices. `applyChange` already routes
+            // through `MotionToken.animation(reduceMotion:)`, so this stays correct
+            // under Reduce-Motion without a separate branch. `arcadeBest` updates
+            // inside `rebuild()`.
+            //
+            // Completion-FX (Phase 5): capture the pre-toggle cleared state
+            // BEFORE `applyChange` runs `rebuild()` (which resyncs `wasAllCleared`
+            // to the post-toggle value), so the comparison below is a true
+            // before/after transition check — mirrors the mockup's
+            // `state.prevCleared` dance in `updateVictory()`.
+            let clearedBefore = wasAllCleared
+            applyChange(change, animation: theme.motion.titleColorFade)
+
+            if theme.providesCompletionFX && !reduceMotion && becomingDone {
+                // A completion that also clears the stage fires ONLY `.stageClear`
+                // (confetti, the bigger celebration) rather than both events —
+                // `arcadeFXEvent` is a single slot, not a queue, so the two can't
+                // coexist in one tick. Documented trade-off (see Phase 5 report).
+                if !clearedBefore && isAllClearedToday {
+                    arcadeFXEvent = ArcadeFXEvent(kind: .stageClear)
+                } else {
+                    arcadeFXEvent = ArcadeFXEvent(kind: .complete(taskID: id))
+                }
+            }
+            return
+        }
 
         if reduceMotion {
             applyChange(change, animation: theme.motion.flipMove)
@@ -453,6 +500,32 @@ public final class AppModel {
     /// Store-wide derived stats (streaks etc.), for any consumer that wants them.
     public func stats() -> Stats { store.stats() }
 
+    // MARK: Gamification (Arcade — derived, non-persistent, visual-only)
+
+    /// Score = Today tasks done × 100, regardless of the active tab (mirrors the
+    /// mockup's single global score). Derived, never persisted; other themes
+    /// simply never read it.
+    public var arcadeScore: Int { doneToday.count * 100 }
+
+    /// Session high-water mark for `arcadeScore` — the max score seen since this
+    /// `AppModel` was created. Updated inside `rebuild()` so every mutation path
+    /// (toggle, rollover, reload, undo, …) keeps it current. Never persisted:
+    /// resets naturally on relaunch.
+    public private(set) var arcadeBest: Int = 0
+
+    /// The current streak (consecutive cleared days), read straight from `Stats`.
+    public var arcadeStreak: Int { stats().currentStreak }
+
+    /// One-shot completion-FX trigger (Phase 5 juice), observed by
+    /// `ArcadeFXOverlay`. `nil` until the first qualifying event; every
+    /// subsequent event gets a fresh `ArcadeFXEvent.id` so `.onChange` fires
+    /// even when the `kind` repeats (e.g. two completions in a row). Only ever
+    /// set from `toggle(_:)`, and only when `theme.providesCompletionFX &&
+    /// !reduceMotion` — non-Arcade themes (and Arcade under Reduce Motion)
+    /// never touch this, so `ArcadeFXOverlay` (mounted only for
+    /// `providesCompletionFX` themes) simply never observes a change.
+    public private(set) var arcadeFXEvent: ArcadeFXEvent?
+
     /// The current day-start offset in whole hours (advanced setting, §3.1).
     public var dayStartOffsetHours: Int { store.dayStartOffset / 3600 }
 
@@ -534,6 +607,14 @@ public final class AppModel {
         doneToday = today.filter { $0.done }
         openLongterm = longterm.filter { !$0.done }
         doneLongterm = longterm.filter { $0.done }
+        arcadeBest = max(arcadeBest, arcadeScore)
+        // Keep the cleared-transition tracker current for every mutation path
+        // (toggle, rollover, reload, undo, add, …), not just `toggle` itself —
+        // `toggle` reads this as the "before" value ahead of its OWN rebuild, so
+        // every other path resyncing it here is what makes a later toggle's
+        // before/after comparison correct without each of those call sites
+        // needing their own explicit reset.
+        wasAllCleared = isAllClearedToday
     }
 
     /// Phase-1 checkbox flip: set `done` on the display copy without re-sectioning.
@@ -572,6 +653,29 @@ public struct PendingPaste: Sendable, Hashable {
     public let lines: [String]
     public var count: Int { lines.count }
     public init(lines: [String]) { self.lines = lines }
+}
+
+/// A one-shot completion-FX trigger (Phase 5 juice) for themes that opt in via
+/// `Theme.providesCompletionFX` (Arcade). `id` is a fresh `UUID` per event so
+/// that firing the *same* `kind` twice in a row (two completions back to
+/// back) still produces a distinct `Identifiable`/`Equatable` value —
+/// `ArcadeFXOverlay`'s `.onChange(of:)` needs a real change to re-trigger.
+public struct ArcadeFXEvent: Sendable, Hashable, Identifiable {
+    public enum Kind: Sendable, Hashable {
+        /// A task was completed — drives the score-pop "+100" + coin/bit burst.
+        case complete(taskID: UUID)
+        /// The active Today list just transitioned into fully cleared (was not
+        /// cleared before this toggle, is now) — drives confetti.
+        case stageClear
+    }
+
+    public let id: UUID
+    public let kind: Kind
+
+    public init(kind: Kind) {
+        self.id = UUID()
+        self.kind = kind
+    }
 }
 
 /// The transient undo affordance shown after a soft-delete (§2.2).

@@ -377,7 +377,32 @@ final class PanelController: NSObject, PanelChrome {
     }
 
     func themeChanged() {
+        // If the panel is on screen when the theme swaps (e.g. macOS ↔ Arcade), its
+        // geometry — panel size, corner radius via the shadow path, hard vs. soft
+        // shadow — comes from the new theme's metrics/palette immediately, not only on
+        // the next `show(from:)`. Reuses `morphFrame`'s non-animated anchoring so the
+        // beak/top-right corner stays put while the card resizes to the new theme.
+        if isVisible {
+            resizeForCurrentTheme()
+        }
         background.apply(palette: controller.currentPalette)
+    }
+
+    /// Resizes the (already-visible) window to the current theme's panel size for the
+    /// remembered expanded/compact state, anchored on the card's top-right corner —
+    /// the same anchoring `morphFrame` uses for the expand/collapse animation.
+    private func resizeForCurrentTheme() {
+        let expanded = controller.settings.panelExpanded
+        let panelSize = expanded ? controller.theme.metrics.panelExpandedSize
+                                 : controller.theme.metrics.panelCompactSize
+        let newWinSize = PanelController.windowSize(for: panelSize)
+
+        let old = window.frame
+        let newOriginX = old.maxX - newWinSize.width
+        let newOriginY = old.maxY - newWinSize.height
+        var newFrame = NSRect(x: newOriginX, y: newOriginY, width: newWinSize.width, height: newWinSize.height)
+        newFrame = clampToScreen(newFrame, panelSize: panelSize)
+        window.setFrame(newFrame, display: true)
     }
 
     // MARK: Layer anchor helper

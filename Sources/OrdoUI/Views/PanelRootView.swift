@@ -44,8 +44,16 @@ public struct PanelRootView: View {
 
     public var body: some View {
         HStack(spacing: 0) {
-            rail
-            mainColumn
+            if model.theme.railOnTrailing {
+                // Arcade: task/main column leads (left), STATS rail trails (right) —
+                // mockup `.panel-inner { .main; .side }`, `.side` bordered on its left.
+                mainColumn
+                rail
+            } else {
+                // macOS (default): unchanged — rail leads (left), main column trails.
+                rail
+                mainColumn
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Color.clear)
@@ -69,11 +77,15 @@ public struct PanelRootView: View {
     // MARK: Rail
 
     private var rail: some View {
-        RailView(model: model)
+        // The divider sits on the edge of the rail that abuts `mainColumn`: trailing
+        // when the rail leads (macOS, unchanged), leading when the rail trails
+        // (Arcade — the mockup's `.side { border-left }`).
+        let dividerEdge: Alignment = model.theme.railOnTrailing ? .leading : .trailing
+        return RailView(model: model)
             .frame(width: expanded ? model.theme.metrics.railWidth : 0, alignment: .leading)
             .opacity(expanded ? 1 : 0)
             .clipped()
-            .overlay(alignment: .trailing) {
+            .overlay(alignment: dividerEdge) {
                 if expanded {
                     Rectangle().fill(palette.divider).frame(width: palette.hairlineWidth)
                 }
@@ -87,6 +99,10 @@ public struct PanelRootView: View {
         VStack(spacing: 0) {
             HeaderView(model: model, chrome: chrome)
             TabBarView(model: model)
+            if let statusRow = model.theme.statusRow(done: model.railDone, total: model.railTotal,
+                                                       isToday: model.tab == .today) {
+                statusRow
+            }
             TaskListView(model: model, expanded: expanded)
                 .frame(maxHeight: .infinity)
             ComposerView(model: model, focus: $focus)
@@ -95,6 +111,19 @@ public struct PanelRootView: View {
         .frame(width: model.theme.metrics.mainColumnWidth)
         .overlay(alignment: .bottom) { undoToast }
         .overlay { settingsOverlay }
+        .overlay { arcadeFX }
+    }
+
+    /// Phase 5 completion-FX (score-pop, coin burst, confetti), gated on the
+    /// theme's opt-in capability — `nil`/absent for every theme but Arcade, so
+    /// macOS mounts nothing here and is unaffected. Placed last (topmost) and
+    /// hit-testing disabled inside the view itself, so it never intercepts
+    /// clicks even while layered over the settings pane.
+    @ViewBuilder
+    private var arcadeFX: some View {
+        if model.theme.providesCompletionFX {
+            ArcadeFXOverlay(model: model)
+        }
     }
 
     @ViewBuilder

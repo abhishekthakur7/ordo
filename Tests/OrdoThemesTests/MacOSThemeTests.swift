@@ -294,9 +294,9 @@ final class MacOSThemeTests: XCTestCase {
     func testRegistryDefaultAndLookup() {
         let reg = ThemeRegistry.shared
         XCTAssertEqual(reg.defaultTheme.id, .macOS)
-        XCTAssertEqual(reg.all.count, 1)
+        XCTAssertEqual(reg.all.count, 2)
         XCTAssertEqual(reg.theme(id: .macOS)?.id, .macOS)
-        XCTAssertNil(reg.theme(id: .arcade)) // reserved, not yet shipped
-        XCTAssertEqual(reg.theme(idOrDefault: .swiss).id, .macOS) // falls back
+        XCTAssertEqual(reg.theme(id: .arcade)?.id, .arcade) // now shipped
+        XCTAssertEqual(reg.theme(idOrDefault: .swiss).id, .macOS) // still reserved, falls back
     }
 }

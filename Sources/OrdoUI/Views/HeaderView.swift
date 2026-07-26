@@ -15,14 +15,8 @@ struct HeaderView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                theme.typeScale.greeting.styled(model.greeting)
-                    .foregroundStyle(palette.ink)
-                theme.typeScale.date.styled(model.dateLine)
-                    .foregroundStyle(palette.ink2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
+            leadingContent
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 6) {
                 IconButton(action: toggleSettings, accessibilityLabel: UIStrings.settingsTitle) {
@@ -40,6 +34,27 @@ struct HeaderView: View {
             }
         }
         .padding(EdgeInsets(top: 15, leading: 18, bottom: 10, trailing: 12))
+    }
+
+    /// The header's leading cluster. Arcade's `headerLeading` builder supplies a
+    /// self-laying-out brand mark + "ORDO" wordmark + SCORE mini (it already
+    /// contains its own internal spacer), replacing the greeting/date stack
+    /// entirely — the trailing icon buttons (gear/expand) stay put either way.
+    /// `nil` (macOS, and every theme without this hook) keeps the current
+    /// greeting/date `VStack` byte-identical to before this hook existed.
+    @ViewBuilder
+    private var leadingContent: some View {
+        if let leading = theme.headerLeading(score: model.arcadeScore) {
+            leading
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                theme.typeScale.greeting.styled(model.greeting)
+                    .foregroundStyle(palette.ink)
+                theme.typeScale.date.styled(model.dateLine)
+                    .foregroundStyle(palette.ink2)
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     private func toggleSettings() {
