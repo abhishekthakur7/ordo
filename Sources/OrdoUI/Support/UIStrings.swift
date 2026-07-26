@@ -43,6 +43,7 @@ enum UIStrings {
     static let hotkeyRecording = "Type a shortcut…"
     static let dayStartTitle = "Day starts at"
     static let dayStartHelp = "Advanced: when your logical day begins. Late-night tasks before this hour count as the previous day."
+    static let themeTitle = "Theme"
     static let appearanceLabel = "Appearance"
     static let soundLabel = "Sound"
 

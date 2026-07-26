@@ -28,13 +28,22 @@ public struct ThemeMetrics: Sendable, Hashable {
     public var checkboxSize: Double
     /// Pointer beak size (12).
     public var beakSize: Double
+    /// Cabinet border stroke width (Arcade). Default 0 — macOS has no cabinet border.
+    public var borderWidth: Double
+    /// Segmented progress bar segment count (Arcade). Default 0 — unused elsewhere.
+    public var progressSegments: Int
+    /// Horizontal inset from the panel's right edge to the notch/beak's right edge —
+    /// i.e. the mockup's `.notch`/`.beak` CSS `right:` value, in px (macOS 26, Arcade 44).
+    public var notchInsetFromRight: Double
 
     public init(
         panelCompactSize: CGSize, panelExpandedSize: CGSize, panelCornerRadius: Double,
         railWidth: Double, mainColumnWidth: Double,
         ringRadius: Double, ringStrokeWidth: Double,
         compactRingDiameter: Double, compactRingStrokeWidth: Double,
-        rowCornerRadius: Double, checkboxSize: Double, beakSize: Double
+        rowCornerRadius: Double, checkboxSize: Double, beakSize: Double,
+        borderWidth: Double = 0, progressSegments: Int = 0,
+        notchInsetFromRight: Double = 26
     ) {
         self.panelCompactSize = panelCompactSize
         self.panelExpandedSize = panelExpandedSize
@@ -48,5 +57,8 @@ public struct ThemeMetrics: Sendable, Hashable {
         self.rowCornerRadius = rowCornerRadius
         self.checkboxSize = checkboxSize
         self.beakSize = beakSize
+        self.borderWidth = borderWidth
+        self.progressSegments = progressSegments
+        self.notchInsetFromRight = notchInsetFromRight
     }
 }

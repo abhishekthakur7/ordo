@@ -14,6 +14,13 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/OrdoApp"
 
+# Copy SwiftPM resource bundles (e.g. Ordo_OrdoThemes.bundle with the bundled fonts)
+# so `Bundle.module` resolves at runtime inside the .app, not just under `swift run`.
+for b in "$SCRATCH/release"/*.bundle; do
+	[ -e "$b" ] || continue
+	cp -R "$b" "$APP/Contents/Resources/"
+done
+
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

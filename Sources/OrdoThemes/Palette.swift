@@ -140,6 +140,105 @@ public struct MaterialIntent: Sendable, Hashable {
     }
 }
 
+// MARK: - Cabinet surface (opaque, non-vibrancy)
+
+/// A zero-blur CSS-style offset shadow: `box-shadow: <x>px <y>px 0 <color>`. Used by
+/// the Arcade "cabinet" surface for its hard drop shadow (no glow, no softness).
+public struct HardShadow: Sendable, Hashable {
+    public var color: Color
+    public var x: Double
+    public var y: Double
+
+    public init(color: Color, x: Double, y: Double) {
+        self.color = color
+        self.x = x
+        self.y = y
+    }
+}
+
+/// Describes a CRT/LCD-style screen overlay (scanlines, grain, vignette, pixel grid).
+/// `.none` (the static default) draws nothing, which is what every macOS palette gets.
+public struct OverlayStyle: Sendable, Hashable {
+    public enum Kind: Sendable, Hashable {
+        case none
+        case scanlines
+        case lcdGrain
+    }
+
+    public var kind: Kind
+    /// Opacity of the repeating scanline lines (0–1).
+    public var scanlineOpacity: Double
+    /// Vertical period of the scanline repeat, in points (mockup: 1px line every 3px).
+    public var scanlinePitch: Double
+    /// Opacity of a radial vignette darkening the corners (0–1).
+    public var vignetteOpacity: Double
+    /// Opacity of a faint pixel/grid overlay (0–1).
+    public var gridOpacity: Double
+
+    public init(
+        kind: Kind,
+        scanlineOpacity: Double = 0,
+        scanlinePitch: Double = 3,
+        vignetteOpacity: Double = 0,
+        gridOpacity: Double = 0
+    ) {
+        self.kind = kind
+        self.scanlineOpacity = scanlineOpacity
+        self.scanlinePitch = scanlinePitch
+        self.vignetteOpacity = vignetteOpacity
+        self.gridOpacity = gridOpacity
+    }
+
+    /// No overlay — the default for every surface that isn't an arcade cabinet.
+    public static let none = OverlayStyle(kind: .none)
+}
+
+/// The opaque "cabinet" panel surface (Arcade), mutually exclusive with macOS vibrancy:
+/// a flat fill, a border, a hard zero-blur offset shadow, a top sheen highlight, and an
+/// optional CRT/LCD overlay descriptor.
+public struct CabinetStyle: Sendable, Hashable {
+    /// Opaque panel fill (the mockup's `--cab`).
+    public var fill: Color
+    /// Panel border color (the mockup's `--line-2`).
+    public var border: Color
+    /// Border stroke width in points (mockup: 2).
+    public var borderWidth: Double
+    /// Panel corner radius in points (mockup: 16).
+    public var cornerRadius: Double
+    /// The hard, zero-blur offset shadow (mockup: `6px 8px 0 var(--hard)`).
+    public var hardShadow: HardShadow
+    /// Start color of the top sheen highlight gradient.
+    public var topSheen: Color
+    /// CRT/LCD overlay descriptor; `.none` draws nothing.
+    public var overlay: OverlayStyle
+
+    public init(
+        fill: Color,
+        border: Color,
+        borderWidth: Double = 2,
+        cornerRadius: Double = 16,
+        hardShadow: HardShadow,
+        topSheen: Color,
+        overlay: OverlayStyle = .none
+    ) {
+        self.fill = fill
+        self.border = border
+        self.borderWidth = borderWidth
+        self.cornerRadius = cornerRadius
+        self.hardShadow = hardShadow
+        self.topSheen = topSheen
+        self.overlay = overlay
+    }
+}
+
+/// Which panel surface a theme renders: macOS vibrancy/glass (`.vibrancy`, driving an
+/// `NSVisualEffectView` via `MaterialIntent`) or an opaque arcade cabinet (`.cabinet`).
+/// The two are mutually exclusive — a theme picks exactly one.
+public enum SurfaceStyle: Sendable, Hashable {
+    case vibrancy(MaterialIntent)
+    case cabinet(CabinetStyle)
+}
+
 // MARK: - Palette
 
 /// A fully art-directed color set for one appearance. Every value is transcribed
@@ -182,6 +281,18 @@ public struct Palette: Sendable, Hashable {
     /// Hairline stroke width in points; thickens under Increase Contrast.
     public var hairlineWidth: Double
 
+    /// Which panel surface to render: macOS vibrancy (`.vibrancy(material)`, the
+    /// default derived from `material` below) or an opaque Arcade cabinet.
+    public var surface: SurfaceStyle
+
+    // Coin / gold accent (Arcade). Defaults to `.clear` — unused by non-Arcade themes.
+    public var coin: Color
+    public var coinInk: Color
+    /// Accent glow color (e.g. for focus/press glows).
+    public var glow: Color
+    /// Coin-specific glow color.
+    public var coinGlow: Color
+
     public init(
         ink: Color, ink2: Color, ink3: Color, inkFaint: Color,
         rowHover: Color, rowPress: Color, fieldBackground: Color, fieldLine: Color,
@@ -191,7 +302,9 @@ public struct Palette: Sendable, Hashable {
         material: MaterialIntent,
         panelHairline: Color, panelHairlineOuter: Color, innerHighlight: Color,
         panelShadow: [ShadowLayer],
-        hairlineWidth: Double
+        hairlineWidth: Double,
+        surface: SurfaceStyle? = nil,
+        coin: Color = .clear, coinInk: Color = .clear, glow: Color = .clear, coinGlow: Color = .clear
     ) {
         self.ink = ink
         self.ink2 = ink2
@@ -215,5 +328,10 @@ public struct Palette: Sendable, Hashable {
         self.innerHighlight = innerHighlight
         self.panelShadow = panelShadow
         self.hairlineWidth = hairlineWidth
+        self.surface = surface ?? .vibrancy(material)
+        self.coin = coin
+        self.coinInk = coinInk
+        self.glow = glow
+        self.coinGlow = coinGlow
     }
 }

@@ -15,7 +15,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "OrdoCore", swiftSettings: swiftSettings),
-        .target(name: "OrdoThemes", dependencies: ["OrdoCore"], swiftSettings: swiftSettings),
+        .target(
+            name: "OrdoThemes",
+            dependencies: ["OrdoCore"],
+            resources: [.process("Resources/Fonts")],
+            swiftSettings: swiftSettings
+        ),
         .target(name: "OrdoSound", dependencies: ["OrdoCore", "OrdoThemes"], swiftSettings: swiftSettings),
         .target(name: "OrdoUI", dependencies: ["OrdoCore", "OrdoThemes"], swiftSettings: swiftSettings),
         .executableTarget(

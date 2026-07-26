@@ -1,5 +1,16 @@
 import SwiftUI
 
+/// Which font face a `TypeToken` should resolve to. `.system` keeps the current SF
+/// Pro behavior (used by every macOS token); `.named` resolves a bundled custom font
+/// by PostScript/family name (e.g. Arcade's "Press Start 2P" or "Space Grotesk").
+/// Runtime registration of the named font (via `CTFontManagerRegisterFontsForURL`)
+/// is a separate concern owned by a sibling `FontRegistrar` type — this enum only
+/// carries the *name* to resolve, so it has no dependency on that type.
+public enum FontFamily: Sendable, Hashable {
+    case system
+    case named(String)
+}
+
 /// One typographic role: size, weight, letter-spacing, line-height and digit style.
 /// Transcribed from the mockup's per-element CSS. Sizes are in points; `trackingEm`
 /// is CSS `letter-spacing` in em; `lineHeightMultiple` is the CSS unitless line-height.
@@ -14,6 +25,10 @@ public struct TypeToken: Sendable, Hashable {
     public var monospacedDigit: Bool
     /// Whether the text should render uppercased (CSS `text-transform: uppercase`).
     public var uppercase: Bool
+    /// Which font face to resolve `font` to. Defaults to `.system` (SF Pro) so every
+    /// existing macOS token is unaffected. Arcade tokens can set `.named("Press Start 2P")`
+    /// or `.named("Space Grotesk")`.
+    public var fontFamily: FontFamily
 
     public init(
         size: Double,
@@ -21,7 +36,8 @@ public struct TypeToken: Sendable, Hashable {
         trackingEm: Double = 0,
         lineHeightMultiple: Double = 1.2,
         monospacedDigit: Bool = false,
-        uppercase: Bool = false
+        uppercase: Bool = false,
+        fontFamily: FontFamily = .system
     ) {
         self.size = size
         self.weight = weight
@@ -29,6 +45,7 @@ public struct TypeToken: Sendable, Hashable {
         self.lineHeightMultiple = lineHeightMultiple
         self.monospacedDigit = monospacedDigit
         self.uppercase = uppercase
+        self.fontFamily = fontFamily
     }
 
     /// letter-spacing converted to points for `.tracking(_:)`.
@@ -37,9 +54,18 @@ public struct TypeToken: Sendable, Hashable {
     /// Extra leading for `.lineSpacing(_:)` (SwiftUI adds this *between* lines).
     public var lineSpacing: Double { max(0, size * (lineHeightMultiple - 1)) }
 
-    /// The SF system font for this role, digit style applied.
+    /// The font for this role, digit style applied. Resolves `.system` to SF Pro via
+    /// `Font.system(size:weight:)` (unchanged behavior); resolves `.named` to the
+    /// bundled custom font via `Font.custom(_:size:)`, still applying `weight` (some
+    /// custom faces, like Press Start 2P, are single-weight and will simply ignore it).
     public var font: Font {
-        var f = Font.system(size: size, weight: weight)
+        var f: Font
+        switch fontFamily {
+        case .system:
+            f = Font.system(size: size, weight: weight)
+        case .named(let name):
+            f = Font.custom(name, size: size).weight(weight)
+        }
         if monospacedDigit { f = f.monospacedDigit() }
         return f
     }

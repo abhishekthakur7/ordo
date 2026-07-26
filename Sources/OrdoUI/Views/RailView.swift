@@ -12,35 +12,48 @@ struct RailView: View {
     @Environment(\.ordoPalette) private var palette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            theme.typeScale.railKicker.styled(UIStrings.railKicker)
-                .foregroundStyle(palette.ink3)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        // Structural capability (Phase 4): when the theme supplies full rail
+        // content (Arcade's STATS cards + mascot), render it INSTEAD of the
+        // shared kicker/ring/stats/quote body. The builder self-frames to
+        // `theme.metrics.railWidth` and self-pads, so it is returned as-is —
+        // no double-padding/double-framing here. `nil` (macOS, and every
+        // theme without this hook) falls through to the existing body,
+        // unchanged.
+        if let railContent = theme.railContent(done: model.railDone, total: model.railTotal,
+                                                 remaining: model.railRemaining, score: model.arcadeScore,
+                                                 best: model.arcadeBest, streak: model.arcadeStreak) {
+            railContent
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                theme.typeScale.railKicker.styled(UIStrings.railKicker)
+                    .foregroundStyle(palette.ink3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            theme.progressRing(done: model.railDone, total: model.railTotal)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 30)
-                .padding(.bottom, 8)
+                theme.progressRing(done: model.railDone, total: model.railTotal)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 30)
+                    .padding(.bottom, 8)
 
-            VStack(spacing: 0) {
-                statLine(UIStrings.railCompleted, model.railDone)
-                railDivider
-                statLine(UIStrings.railRemaining, model.railRemaining)
-                railDivider
-                statLine(UIStrings.railTotal, model.railTotal)
+                VStack(spacing: 0) {
+                    statLine(UIStrings.railCompleted, model.railDone)
+                    railDivider
+                    statLine(UIStrings.railRemaining, model.railRemaining)
+                    railDivider
+                    statLine(UIStrings.railTotal, model.railTotal)
+                }
+                .padding(.top, 22)
+
+                Spacer(minLength: 12)
+
+                Text(UIStrings.railQuote)
+                    .typeToken(theme.typeScale.railQuote)
+                    .foregroundStyle(palette.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.top, 22)
-
-            Spacer(minLength: 12)
-
-            Text(UIStrings.railQuote)
-                .typeToken(theme.typeScale.railQuote)
-                .foregroundStyle(palette.ink3)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(EdgeInsets(top: 26, leading: 22, bottom: 26, trailing: 22))
+            .frame(width: theme.metrics.railWidth, alignment: .leading)
         }
-        .padding(EdgeInsets(top: 26, leading: 22, bottom: 26, trailing: 22))
-        .frame(width: theme.metrics.railWidth, alignment: .leading)
     }
 
     /// A 0.5px stat-row hairline (mockup .rail-line border-bottom), thickening under
