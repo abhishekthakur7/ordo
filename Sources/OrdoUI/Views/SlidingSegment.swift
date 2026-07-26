@@ -40,16 +40,6 @@ struct SlidingSegment<Option: Hashable, Label: View>: View {
 
             // Sliding thumb, sized/placed from the measured selected-segment frame.
             if let f = frames[selectedIndex] {
-                // Arcade only: the measured frame's `width`/`minX` are sub-pixel
-                // CGFloats (equal/content-width division rarely lands on a whole
-                // point). Left alone, that fractional edge forces the renderer to
-                // anti-alias the thumb's leading/trailing edges against the track
-                // color underneath (`segmentBackground`), which reads as a lighter,
-                // desaturated fill versus the flat `segmentThumb` color — most
-                // visible on Arcade's flat/matte chrome. macOS's soft glass thumb
-                // (with its own blur/shadow) doesn't show this, and was
-                // fidelity-tuned against the raw measured values, so this snap is
-                // gated on the capability rather than applied unconditionally.
                 let thumbWidth = theme.usesCabinetControls ? pixelSnapped(f.width) : f.width
                 let thumbX = theme.usesCabinetControls ? pixelSnapped(f.minX) : f.minX
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)

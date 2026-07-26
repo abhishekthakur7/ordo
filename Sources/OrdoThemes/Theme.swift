@@ -67,82 +67,56 @@ public protocol Theme: Sendable {
     /// The menu-bar status glyph as a template `NSImage` (system-tinted).
     func menuBarGlyphImage(pointSize: CGFloat) -> NSImage
 
-    // MARK: Structural capabilities (Phase 4 — defaults keep macOS behavior)
+    // MARK: Structural capabilities (defaults keep macOS behavior)
 
-    /// Whether completed rows move into a separate "Completed" section with its
-    /// own header, driven by the two-phase reflow choreography in `AppModel.toggle`.
-    /// Default `true` (macOS). Arcade is `false`: done rows dim IN PLACE (opacity
-    /// + strikethrough) in stored order, with no header and no reflow.
+    /// Whether completed rows move into a separate "Completed" section. Default
+    /// `true`. Arcade is `false`: done rows dim in place, in stored order.
     var showsDoneSection: Bool { get }
-    /// Whether the tab bar shows a live open-count badge per tab. Default `true`
-    /// (macOS). Arcade is `false`: a small dot indicator takes its place instead
-    /// (hidden on the active tab), never a number.
+    /// Whether the tab bar shows a live open-count badge per tab. Default
+    /// `true`. Arcade is `false`: a small dot indicator takes its place.
     var showsTabCountBadge: Bool { get }
-    /// Whether task rows render as bordered "cabinet" cards (2px border, hard
-    /// offset shadow, hover translate(-1,-1) + bigger shadow, press translate(2,2)
-    /// + no shadow) instead of a flat hover/press highlight. Default `false`
-    /// (macOS). Arcade is `true`.
+    /// Whether task rows render as bordered "cabinet" cards with a hard offset
+    /// shadow instead of a flat hover/press highlight. Default `false`.
     var usesCabinetRows: Bool { get }
-    /// Label for the footer sound toggle, or `nil` to render no label (macOS: an
-    /// icon-only switch). Arcade: `"SFX"`.
+    /// Label for the footer sound toggle, or `nil` for no label (an icon-only
+    /// switch). Arcade: `"SFX"`.
     var soundToggleLabel: String? { get }
-    /// Whether this theme wants the Phase 5 completion-FX overlay (score-pop,
-    /// coin burst, confetti on stage-clear) driven by `AppModel.arcadeFXEvent`.
-    /// Default `false` (macOS, and every other theme) — `AppModel` never emits
-    /// the event and `PanelRootView` never mounts the overlay. Arcade is `true`.
+    /// Whether this theme wants the completion-FX overlay (score-pop, coin
+    /// burst, confetti on stage-clear) driven by `AppModel.arcadeFXEvent`.
+    /// Default `false`.
     var providesCompletionFX: Bool { get }
-    /// Whether the expanded planning rail sits on the trailing (right) edge with the
-    /// task column leading. Default `false` (macOS: rail leads/left). Arcade is `true`
-    /// (mockup `.panel-inner { .main; .side }` — task column left, rail right).
+    /// Whether the expanded planning rail sits on the trailing (right) edge
+    /// with the task column leading. Default `false` (rail leads/left).
     var railOnTrailing: Bool { get }
-    /// Whether the footer appearance segment shows text labels (Auto/Light/Dark) next
-    /// to each icon. Default `true` (macOS). Arcade is `false` (icon-only pill buttons).
+    /// Whether the footer appearance segment shows text labels next to each
+    /// icon. Default `true`. Arcade is `false` (icon-only pill buttons).
     var showsAppearanceLabels: Bool { get }
-    /// Whether header/row icon buttons render cabinet chrome at rest (2px border,
-    /// `cab-2` fill, hard offset shadow) instead of the flat macOS "invisible until
-    /// hover" style. Default `false` (macOS). Arcade is `true`.
+    /// Whether header/row icon buttons render cabinet chrome at rest instead
+    /// of the flat "invisible until hover" style. Default `false`.
     var usesCabinetIconButtons: Bool { get }
-    /// Whether the composer + footer controls (add button, "+" glyph, sound switch)
-    /// use the cabinet aesthetic: opaque accent add button that never dims, hard
-    /// offset shadow, accent "+" glyph, squared sound switch. Default `false` (macOS).
-    /// Arcade is `true`.
+    /// Whether the composer + footer controls use the cabinet aesthetic (an
+    /// opaque add button that never dims, hard offset shadow, squared sound
+    /// switch). Default `false`.
     var usesCabinetControls: Bool { get }
-    /// Whether the all-cleared celebration COVERS the list area (replacing the task
-    /// rows entirely while shown) instead of rendering above them as an additional
-    /// element in the scroll content. Default `false` (macOS): `allClearedState()`
-    /// renders above the (still-visible, dimmed) done rows, per the current sun
-    /// celebration. Arcade is `true` (mockup `.victory { position:absolute; inset:0;
-    /// background:var(--screen); }` fully occludes `.list` — the task rows are
-    /// hidden, not merely covered by a smaller card, while the stage is cleared).
+    /// Whether the all-cleared celebration covers the list area (replacing the
+    /// task rows) instead of rendering above them. Default `false`.
     var clearedStateCoversList: Bool { get }
 
-    // MARK: Structural content builders (Phase 4 — primitives only; nil → shared
-    // view keeps its current layout)
+    // MARK: Structural content builders (primitives only; nil → shared view
+    // keeps its current layout)
 
     /// Leading content for the header row, replacing the default greeting/date
-    /// stack when non-nil. `score` is the live derived arcade score
-    /// (`AppModel.arcadeScore`); themes that don't use it may ignore the
-    /// parameter. Default `nil`. Arcade returns the brand mark + "ORDO" wordmark
-    /// + a right-aligned "SCORE" mini readout. The caller (`HeaderView`) keeps
-    /// its own trailing icon buttons (gear/expand) — this builder supplies ONLY
-    /// the leading content, not the whole row.
+    /// stack when non-nil. `score` is the live derived arcade score. Default `nil`.
     func headerLeading(score: Int) -> AnyView?
-    /// A status row rendered between the tab bar and the task list, or `nil` to
-    /// render none (the current macOS layout has no such row). `done`/`total`
-    /// are the active tab's counts; `isToday` is `tab == .today`. Default `nil`.
-    /// Arcade returns the big reactive number + two-line pixel caption + segbar
-    /// (one segment per task, `done` filled from the left).
+    /// A status row rendered between the tab bar and the task list, or `nil`
+    /// for none. `done`/`total` are the active tab's counts. Default `nil`.
     func statusRow(done: Int, total: Int, isToday: Bool) -> AnyView?
     /// Full content for the expanded-panel side rail, or `nil` to keep the
-    /// shared `RailView`'s current kicker/ring/stats/quote layout. All
-    /// parameters are primitives already resolved by `AppModel`
-    /// (`railDone`/`railRemaining`/`railTotal`/`arcadeScore`/`arcadeBest`/
-    /// `arcadeStreak`). Default `nil`. Arcade returns the STATS-labeled card
-    /// stack (HIGH SCORE / SCORE / STREAK / CLEARED) plus the mascot card.
+    /// shared `RailView` layout. Parameters are primitives already resolved
+    /// by `AppModel`. Default `nil`.
     func railContent(done: Int, total: Int, remaining: Int, score: Int, best: Int, streak: Int) -> AnyView?
-    /// Composer placeholder text, or `nil` to keep the shared default
-    /// (`UIStrings.composerPlaceholder`). `isToday` is `tab == .today`. Default
-    /// `nil`. Arcade returns `"ADD A TASK…"` (Today) / `"ADD A QUEST…"` (Quests).
+    /// Composer placeholder text, or `nil` to keep the shared default.
+    /// `isToday` is `tab == .today`. Default `nil`.
     func composerPlaceholder(isToday: Bool) -> String?
 }
 
@@ -157,8 +131,7 @@ extension Theme {
         menuBarGlyphImage(pointSize: 18)
     }
 
-    // MARK: Structural capability defaults (macOS + every existing theme get
-    // these for free; only `ArcadeTheme` overrides them).
+    // MARK: Structural capability defaults (only `ArcadeTheme` overrides these)
 
     public var showsDoneSection: Bool { true }
     public var showsTabCountBadge: Bool { true }

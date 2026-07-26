@@ -31,10 +31,6 @@ struct FooterView: View {
             trackCornerRadius: 9,
             onSelect: { model.settings.appearance = $0 }
         ) { option, isActive in
-            // Arcade's segment is an icon-only pill (mockup `.seg-theme` has no
-            // text, just the monitor/sun/moon glyph); macOS keeps the icon+label
-            // pairing exactly as before. Gated on `theme.showsAppearanceLabels`
-            // (default `true`), never `theme.id`.
             Group {
                 if theme.showsAppearanceLabels {
                     HStack(spacing: 4) {
@@ -51,13 +47,8 @@ struct FooterView: View {
         .accessibilityLabel(UIStrings.appearanceLabel)
     }
 
-    /// The active segment's foreground. Arcade's thumb IS the accent fill
-    /// (mockup `.seg-theme.on` → accent bg + `--accent-ink` text), so the
-    /// active label needs `accentInk` there for contrast; macOS's thumb is a
-    /// neutral surface, so it keeps plain `ink`. Gated on `soundToggleLabel
-    /// != nil` — a capability signal for "this theme uses an accent-filled
-    /// thumb", not `theme.id` — so macOS (nil) is byte-for-byte unchanged:
-    /// `isActive ? palette.ink : palette.ink2`, exactly as before.
+    /// The active segment's foreground. Themes whose thumb is an accent fill
+    /// (Arcade) need `accentInk` there for contrast; others keep plain `ink`.
     private func activeSegmentForeground(isActive: Bool) -> Color {
         guard isActive else { return palette.ink2 }
         return theme.soundToggleLabel != nil ? palette.accentInk : palette.ink
@@ -96,15 +87,6 @@ struct SoundToggle: View {
             StrokeIcon(systemName: on ? "speaker.wave.2" : "speaker.slash", size: 16, weight: .medium)
                 .foregroundStyle(palette.ink2)
 
-            // Pixel "SFX" label (mockup `.sound-lbl`), shown only when the
-            // theme opts in. `theme.soundToggleLabel` is nil for macOS (an
-            // icon-only switch, unchanged) and "SFX" for Arcade. We use the
-            // shared `segmentButton` type token rather than reaching for
-            // `ArcadeTheme.sfxLabelType` directly — that would require a
-            // concrete `ArcadeTheme` cast/`theme.id` check to access, which
-            // breaks the "branch on capability, never `theme.id`" rule this
-            // file must follow. `segmentButton` is close in size (7pt pixel)
-            // and keeps this view theme-agnostic.
             if let sfxLabel = theme.soundToggleLabel {
                 Text(sfxLabel)
                     .typeToken(theme.typeScale.segmentButton)
@@ -114,10 +96,6 @@ struct SoundToggle: View {
             Button {
                 model.setSoundEnabled(!on)
             } label: {
-                // Arcade's `.sw` is a squared cabinet switch (r4 track / r2 knob,
-                // token-driven, accent+glow on-state, no soft shadow); macOS keeps
-                // the capsule + white-knob switch exactly as before. Gated on
-                // `theme.usesCabinetControls` (default `false`), never `theme.id`.
                 if theme.usesCabinetControls {
                     cabinetSwitch
                 } else {
@@ -131,8 +109,7 @@ struct SoundToggle: View {
         }
     }
 
-    /// UNCHANGED: the macOS capsule track + white circular knob with a soft
-    /// black drop shadow, sliding on `theme.motion.soundKnob`.
+    /// The macOS capsule track + white circular knob with a soft drop shadow.
     private var legacySwitch: some View {
         ZStack(alignment: on ? .trailing : .leading) {
             Capsule()
@@ -149,11 +126,8 @@ struct SoundToggle: View {
         .animation(theme.motion.soundKnob.animation(reduceMotion: reduceMotion), value: on)
     }
 
-    /// The Arcade cabinet switch (mockup `.sw`): 38×20 track, 2px border r4 (squared,
-    /// not a capsule), fill `--screen-2` (`palette.segmentBackground`) with the border
-    /// tinting toward accent on-state; knob 14×14 r2, `--ink-3` off / accent + glow
-    /// on. `palette.glow` is `.clear` in the light (DMG) palette, so the glow
-    /// no-ops there exactly as the spec calls for. No soft black shadow anywhere.
+    /// The Arcade cabinet switch: a squared 38×20 track (no capsule) with a
+    /// bordered knob that glows accent-colored when on. No soft shadow.
     private var cabinetSwitch: some View {
         ZStack(alignment: on ? .trailing : .leading) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)

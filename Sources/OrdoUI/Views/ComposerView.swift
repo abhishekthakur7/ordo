@@ -33,8 +33,6 @@ struct ComposerView: View {
 
     private var field: some View {
         HStack(spacing: 9) {
-            // Arcade's inline "+" is accent-green (never the dim `ink3` macOS uses),
-            // gated on the cabinet-controls capability so macOS is untouched.
             StrokeIcon(systemName: "plus", size: 16, weight: .medium)
                 .foregroundStyle(theme.usesCabinetControls ? palette.accent : palette.ink3)
 
@@ -79,9 +77,6 @@ struct ComposerView: View {
                         .padding(-1.5)
                 )
         )
-        // Focused-field glow: `palette.glow` is non-clear only in arcade dark
-        // (arcade light and macOS both set it to `.clear`), so this is a no-op
-        // everywhere else — no branch on `theme.id` needed.
         .shadow(color: focusedField ? palette.glow : .clear, radius: 6)
         .animation(theme.motion.titleColorFade.animation(reduceMotion: reduceMotion), value: focusedField)
         .animation(theme.motion.counterFade.animation(reduceMotion: reduceMotion), value: model.showCharacterCounter)
@@ -96,7 +91,7 @@ struct ComposerView: View {
         }
     }
 
-    /// UNCHANGED: 30×30/r9, dims to 35% opacity whenever the field is empty.
+    /// 30×30/r9, dims to 35% opacity whenever the field is empty.
     private var macOSAddButton: some View {
         Button(action: submit) {
             StrokeIcon(systemName: "plus", size: 16, weight: .bold)
@@ -105,7 +100,6 @@ struct ComposerView: View {
                 .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(palette.accent))
         }
         .buttonStyle(PressScaleButtonStyle(scale: 0.88))
-        // `palette.glow` is `.clear` for macOS, so this glow is a no-op here.
         .shadow(color: palette.glow, radius: 6)
         .opacity(model.canAdd ? 1 : 0.35)
         .disabled(!model.canAdd)
@@ -113,10 +107,8 @@ struct ComposerView: View {
         .accessibilityLabel("Add task")
     }
 
-    /// Arcade `.add-btn`: 40×40/r8, full-opacity accent that never dims for an
-    /// empty field (only `.disabled` gates the actual interaction), a crisp hard
-    /// `2px 2px 0` offset shadow (visible in both appearances, mirroring
-    /// `TaskRowView`'s cabinet-shadow technique) plus the existing dark-only glow.
+    /// The Arcade add button: 40×40/r8, full-opacity accent that never dims for
+    /// an empty field, with a hard offset shadow plus the dark-only glow.
     private var arcadeAddButton: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -132,15 +124,12 @@ struct ComposerView: View {
             }
             .buttonStyle(PressScaleButtonStyle(scale: 0.88))
         }
-        // `palette.glow` is `.clear` for arcade-light, so this is dark-only —
-        // additive to the hard shadow above, never a replacement for it.
         .shadow(color: palette.glow, radius: 6)
         .disabled(!model.canAdd)
         .accessibilityLabel("Add task")
     }
 
-    /// The cabinet surface's hard-shadow color (`--hard`), read off the palette's
-    /// `.cabinet` surface — mirrors `TaskRowView.cabinetHardShadowLayer`.
+    /// The cabinet surface's hard-shadow color, read off the palette.
     private var arcadeAddButtonHardShadowColor: Color {
         if case .cabinet(let cab) = palette.surface { return cab.hardShadow.color }
         return .clear

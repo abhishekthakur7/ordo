@@ -10,10 +10,8 @@ struct TaskRowView: View {
     @Bindable var model: AppModel
     let task: OrdoTask
     let expanded: Bool
-    /// 1-based position in the active tab's stored order. Only meaningful (and
-    /// only ever non-nil) for cabinet rows (`theme.usesCabinetRows`), where it
-    /// drives the pixel "01"/"02" trailing index badge; macOS rows always pass
-    /// `nil` (the default) and ignore it entirely.
+    /// 1-based position in the active tab's stored order. Only used by cabinet
+    /// rows, to drive the pixel "01"/"02" trailing index badge.
     var index: Int? = nil
 
     @Environment(\.ordoTheme) private var theme
@@ -41,9 +39,8 @@ struct TaskRowView: View {
         }
     }
 
-    /// UNCHANGED from pre-Phase-4: flat hover/press tint background (`rowBackground`),
-    /// no shadow layer, no offset, no done-opacity dimming (macOS reflows done rows
-    /// into their own section instead — see `TaskListView`).
+    /// Flat hover/press tint background, no shadow layer, no done-opacity
+    /// dimming — macOS reflows done rows into their own section instead.
     private var macOSBody: some View {
         VStack(alignment: .leading, spacing: 6) {
             mainRow
@@ -65,13 +62,9 @@ struct TaskRowView: View {
 
     // MARK: Cabinet rows (Arcade) — 2px border "screen" card + hard offset shadow
 
-    /// The cabinet card and its hard shadow are two SIBLINGS in a `ZStack`, not a
-    /// single view with a CSS-style `box-shadow`: the shadow shape sits fixed at
-    /// (2,2) and never moves, while only the front card (fill + border + content)
-    /// translates by (-1,-1) on hover. That reproduces the mockup's
-    /// `2px 2px 0 hard` → `3px 3px 0 hard` growth exactly (the absolute shadow
-    /// position is unchanged; the card recedes from it), without needing to
-    /// animate the shadow's own offset.
+    /// The cabinet card and its hard shadow are two siblings in a `ZStack`: the
+    /// shadow shape sits fixed at (2,2) while only the front card translates by
+    /// (-1,-1) on hover, so the card appears to recede from a static shadow.
     private var cabinetBody: some View {
         ZStack(alignment: .topLeading) {
             cabinetHardShadowLayer
@@ -98,8 +91,6 @@ struct TaskRowView: View {
         .padding(.horizontal, 10)
         .background(cabinetCardBackground)
         .contentShape(RoundedRectangle(cornerRadius: theme.metrics.rowCornerRadius, style: .continuous))
-        // Arcade dims done rows IN PLACE (stored order, no reflow) — the title
-        // strikethrough itself is drawn by `OrdoArcadeTaskTitle`.
         .opacity(task.done ? 0.62 : 1)
     }
 
@@ -114,11 +105,8 @@ struct TaskRowView: View {
         }
     }
 
-    /// Rest: `palette.divider` (mockup `--line`). Hover: `palette.checkRing`, the
-    /// same token the checkbox's own border uses — it resolves to the mockup's
-    /// `--line-2`, the exact "lighter line" the spec calls for on row hover.
-    /// Selected: `palette.accent`, a border tint standing in for macOS's
-    /// accentSoft fill (the row already has its own screen-color fill).
+    /// Rest: `palette.divider`. Hover: `palette.checkRing` (same token the
+    /// checkbox border uses). Selected: `palette.accent`.
     private var cabinetBorderColor: Color {
         if isSelected { return palette.accent }
         if hover { return palette.checkRing }
@@ -126,11 +114,7 @@ struct TaskRowView: View {
     }
 
     /// A crisp, zero-blur offset shadow: a second copy of the row's own shape,
-    /// filled with the palette's hard-shadow color and held at a FIXED (2,2)
-    /// offset (see `cabinetBody`'s doc comment for why it never itself moves).
-    /// Falls back to a plain translucent black if the active palette somehow
-    /// isn't a `.cabinet` surface (defensive only — `usesCabinetRows` themes
-    /// always pair with a cabinet surface in practice).
+    /// filled with the palette's hard-shadow color, held at a fixed (2,2) offset.
     private var cabinetHardShadowLayer: some View {
         let color: Color = {
             if case .cabinet(let cab) = palette.surface { return cab.hardShadow.color }
@@ -198,9 +182,6 @@ struct TaskRowView: View {
             if age >= 1 {
                 theme.ageMarker(days: age, triage: triage)
             } else if theme.usesCabinetRows, let index {
-                // The mockup's index slot ("01", "02", …) yields to the age
-                // marker once a task is aged — this branch only ever shows one
-                // or the other, matching `.idx-style` in the spec.
                 indexBadge(index)
             }
             if hover && !isEditing {
@@ -212,10 +193,6 @@ struct TaskRowView: View {
     }
 
     /// Cabinet-only pixel index badge ("01", "02", …), zero-padded to 2 digits.
-    /// `ArcadeTheme.indexType` is an Arcade-only type role (not part of the
-    /// shared `TypeScale` schema) — read directly since this whole branch is
-    /// already gated on `theme.usesCabinetRows`, mirroring how the signature
-    /// views reach for `ArcadeTheme.victoryTitleType` etc.
     private func indexBadge(_ index: Int) -> some View {
         Text(String(format: "%02d", index))
             .typeToken(ArcadeTheme.indexType)

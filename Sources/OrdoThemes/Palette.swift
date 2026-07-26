@@ -142,8 +142,8 @@ public struct MaterialIntent: Sendable, Hashable {
 
 // MARK: - Cabinet surface (opaque, non-vibrancy)
 
-/// A zero-blur CSS-style offset shadow: `box-shadow: <x>px <y>px 0 <color>`. Used by
-/// the Arcade "cabinet" surface for its hard drop shadow (no glow, no softness).
+/// A zero-blur offset shadow, used by the Arcade cabinet surface for its hard
+/// drop shadow (no glow, no softness).
 public struct HardShadow: Sendable, Hashable {
     public var color: Color
     public var x: Double
@@ -168,7 +168,7 @@ public struct OverlayStyle: Sendable, Hashable {
     public var kind: Kind
     /// Opacity of the repeating scanline lines (0–1).
     public var scanlineOpacity: Double
-    /// Vertical period of the scanline repeat, in points (mockup: 1px line every 3px).
+    /// Vertical period of the scanline repeat, in points.
     public var scanlinePitch: Double
     /// Opacity of a radial vignette darkening the corners (0–1).
     public var vignetteOpacity: Double
@@ -193,19 +193,19 @@ public struct OverlayStyle: Sendable, Hashable {
     public static let none = OverlayStyle(kind: .none)
 }
 
-/// The opaque "cabinet" panel surface (Arcade), mutually exclusive with macOS vibrancy:
-/// a flat fill, a border, a hard zero-blur offset shadow, a top sheen highlight, and an
-/// optional CRT/LCD overlay descriptor.
+/// The opaque "cabinet" panel surface (Arcade), mutually exclusive with macOS
+/// vibrancy: a flat fill, a border, a hard offset shadow, a top sheen
+/// highlight, and an optional CRT/LCD overlay descriptor.
 public struct CabinetStyle: Sendable, Hashable {
-    /// Opaque panel fill (the mockup's `--cab`).
+    /// Opaque panel fill.
     public var fill: Color
-    /// Panel border color (the mockup's `--line-2`).
+    /// Panel border color.
     public var border: Color
-    /// Border stroke width in points (mockup: 2).
+    /// Border stroke width in points.
     public var borderWidth: Double
-    /// Panel corner radius in points (mockup: 16).
+    /// Panel corner radius in points.
     public var cornerRadius: Double
-    /// The hard, zero-blur offset shadow (mockup: `6px 8px 0 var(--hard)`).
+    /// The hard, zero-blur offset shadow.
     public var hardShadow: HardShadow
     /// Start color of the top sheen highlight gradient.
     public var topSheen: Color
@@ -231,9 +231,8 @@ public struct CabinetStyle: Sendable, Hashable {
     }
 }
 
-/// Which panel surface a theme renders: macOS vibrancy/glass (`.vibrancy`, driving an
-/// `NSVisualEffectView` via `MaterialIntent`) or an opaque arcade cabinet (`.cabinet`).
-/// The two are mutually exclusive — a theme picks exactly one.
+/// Which panel surface a theme renders: macOS vibrancy/glass (`.vibrancy`) or
+/// an opaque arcade cabinet (`.cabinet`). Mutually exclusive.
 public enum SurfaceStyle: Sendable, Hashable {
     case vibrancy(MaterialIntent)
     case cabinet(CabinetStyle)

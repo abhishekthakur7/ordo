@@ -17,12 +17,6 @@ struct IconButton<Icon: View>: View {
 
     var body: some View {
         Group {
-            // Arcade's `.icon-btn` has chrome AT REST (2px border, cabinet fill,
-            // hard offset shadow) with an accent hover and a translate(2,2)
-            // press; macOS keeps the flat "invisible until hover" style exactly
-            // as before. Gated on `theme.usesCabinetIconButtons` (default
-            // `false`), never `theme.id` — every existing call site (header
-            // gear/expand, row actions) keeps working unchanged for macOS.
             if theme.usesCabinetIconButtons {
                 cabinetButton
             } else {
@@ -33,7 +27,7 @@ struct IconButton<Icon: View>: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
-    /// UNCHANGED: the macOS flat, hover-tint-only button.
+    /// The macOS flat, hover-tint-only button.
     private var flatButton: some View {
         Button(action: action) {
             icon()
@@ -48,11 +42,9 @@ struct IconButton<Icon: View>: View {
         .buttonStyle(PressScaleButtonStyle(scale: 0.9))
     }
 
-    /// The Arcade cabinet icon button (mockup `.icon-btn`): border + fill + hard
-    /// offset shadow at rest, accent border/glyph on hover, translate(2,2) with
-    /// the shadow gone on press. Sized/radius by whatever the call site passes
-    /// (28×28 r6 at the header, 24×24 r6 for row actions) — only the chrome
-    /// changes, never the layout the call site already relies on.
+    /// The Arcade cabinet icon button: border + fill + hard offset shadow at
+    /// rest, accent border/glyph on hover, translate(2,2) with the shadow gone
+    /// on press.
     private var cabinetButton: some View {
         Button(action: action) {
             icon()
@@ -62,10 +54,8 @@ struct IconButton<Icon: View>: View {
     }
 }
 
-/// The Arcade cabinet chrome for `IconButton`, mirroring `TaskRowView`'s cabinet-row
-/// technique: a hard-offset shadow shape sits as a FIXED sibling behind the card,
-/// and only the card (fill + border + glyph) translates on press — so the shadow
-/// never itself animates, the card simply recedes onto / off of it.
+/// The Arcade cabinet chrome for `IconButton`: a hard-offset shadow shape sits
+/// fixed behind the card, and only the card translates on press.
 private struct CabinetIconButtonStyle: ButtonStyle {
     let size: CGFloat
     let cornerRadius: CGFloat
@@ -85,11 +75,7 @@ private struct CabinetIconButtonStyle: ButtonStyle {
         @Environment(\.ordoPalette) private var palette
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-        /// Closest available token for the mockup's `--cab-2` icon-button fill:
-        /// the cabinet surface's own fill (`--cab`). `--cab-2` isn't a separate
-        /// palette field; `cab.fill` is the acceptable near-match (see
-        /// `TaskRowView.cabinetHardShadowLayer` for the same "read
-        /// `palette.surface`, fall back if it's somehow not `.cabinet`" pattern).
+        /// The cabinet surface's own fill color.
         private var cabinetFill: Color {
             if case .cabinet(let cab) = palette.surface { return cab.fill }
             return palette.rowHover

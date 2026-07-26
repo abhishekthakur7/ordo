@@ -1,14 +1,9 @@
 import SwiftUI
 
 // MARK: - Environment → palette bridge
-//
-// Mirrors `ArcadeSignatureViews.Themed` / `MacOSSignatureViews.Themed` exactly:
-// reads the live appearance + accessibility environment and hands the resolved
-// palette (and Reduce-Motion flag) to its content, keeping every structural
-// builder's parameters primitives-only while still honoring System/Light/Dark
-// and a11y. Duplicated per-file (rather than shared) to match the existing
-// signature-view file layout.
 
+/// Resolves the live palette (and Reduce-Motion flag) from the environment and
+/// hands them to `content`, mirroring `ArcadeSignatureViews.Themed`.
 private struct Themed<Content: View>: View {
     let theme: ArcadeTheme
     @ViewBuilder let content: (Palette, Bool) -> Content
@@ -32,12 +27,8 @@ private struct Themed<Content: View>: View {
 
 // MARK: - Ad-hoc type roles
 //
-// The mockup's `score-mini .lbl` (header "SCORE" caption) and `.stat-big .k`
-// ("HIGH SCORE" caption) share one CSS rule not otherwise represented in
-// `TypeScale` or the arcade static token set: 6px pixel, `--ink-3`, ls 1px.
-// `.stat-sm .k` / `.stat-card.stat-sm .k` (SCORE / STREAK / CLEARED TODAY
-// captions) are already mapped to `theme.typeScale.railLine` (6px, ls 0.5px)
-// per the doc comment on that token — reused as-is below.
+// Small caption role (SCORE / HIGH SCORE labels) not otherwise represented
+// in `TypeScale` or the arcade static token set.
 private let arcadeMiniLabelType = TypeToken(
     size: 6, weight: .regular, trackingEm: 1.0 / 6,
     fontFamily: .named(FontRegistrar.pressStart2PFamily)
@@ -45,10 +36,9 @@ private let arcadeMiniLabelType = TypeToken(
 
 // MARK: - Header leading (brand + score)
 
-/// The mockup `.head` leading content (`.brand` + `.head-spacer` + `.score-mini`):
-/// the pixel Ordo glyph in its bordered box, the "ORDO" wordmark, a flexible
-/// spacer, then a right-aligned SCORE readout. Deliberately excludes the
-/// trailing icon buttons (gear/expand) — `HeaderView` keeps those.
+/// The header's leading content: pixel Ordo glyph, "ORDO" wordmark, and a
+/// right-aligned SCORE readout. Excludes the trailing icon buttons, which
+/// `HeaderView` keeps.
 struct ArcadeHeaderLeading: View {
     let theme: ArcadeTheme
     let score: Int
@@ -93,11 +83,9 @@ struct ArcadeHeaderLeading: View {
 
 // MARK: - Status row (reactive progress: big number + segbar)
 
-/// The mockup `.status` row: a big reactive number + two-line pixel caption
-/// (`.remain`), then a segmented bar with one segment per task (`.segbar`).
-/// Today tab: number = tasks left, caption "LEFT/TODAY" ("TASK/LEFT" when
-/// exactly one remains). Quests tab: number = done count, caption
-/// "OF {total}/DONE".
+/// A big reactive number + two-line caption, then a segmented bar (one segment
+/// per task). Today tab: number = tasks left ("LEFT/TODAY", or "TASK/LEFT" for
+/// one). Quests tab: number = done count ("OF total/DONE").
 struct ArcadeStatusRow: View {
     let theme: ArcadeTheme
     let done: Int
@@ -123,10 +111,6 @@ struct ArcadeStatusRow: View {
 
     var body: some View {
         Themed(theme: theme) { palette, reduceMotion in
-            // Mockup `.status { display:flex; align-items:center; gap:12px;
-            // padding:12px 15px 10px }` — the whole row is vertically centered and
-            // inset 15px from the panel edges (so the big number never collides with
-            // the left border), with the `.remain` number+caption baseline-aligned.
             HStack(alignment: .center, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Text("\(displayNumber)")
@@ -156,7 +140,6 @@ struct ArcadeStatusRow: View {
     @ViewBuilder
     private func segbar(palette: Palette, reduceMotion: Bool) -> some View {
         if total <= 0 {
-            // Graceful empty state: a single faint placeholder track, no segments.
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .strokeBorder(palette.checkRing, lineWidth: 1.5)
                 .frame(height: 14)
@@ -173,10 +156,6 @@ struct ArcadeStatusRow: View {
                                 .strokeBorder(filled ? palette.accent : palette.checkRing, lineWidth: 1.5)
                         )
                         .shadow(color: filled ? palette.glow : .clear, radius: 3)
-                        // `.seg` transitions background/border-color/transform at
-                        // 260ms ease-out — no named `MotionToken` matches that
-                        // exact duration+curve except `strikethrough`'s (reused
-                        // here for its numbers, not its semantic role).
                         .animation(theme.motion.strikethrough.animation(reduceMotion: reduceMotion), value: filled)
                 }
             }
@@ -188,22 +167,10 @@ struct ArcadeStatusRow: View {
 
 // MARK: - Rail content (STATS cards + mascot)
 
-/// The mockup `.side-inner`: a "STATS" `side-h` kicker, a HIGH SCORE `stat-big`
-/// card, a two-up `stat-row` (SCORE / STREAK), a CLEARED TODAY card, and a
-/// bottom-pinned mascot card. Width is fixed to `theme.metrics.railWidth`.
-///
-/// Every pixel-text group below (`sideHeader`, the HIGH SCORE `VStack`, each
-/// `smallStat`) wears `.pixelSnappedHeight()`. The un-hinted "Press Start 2P"
-/// face reports fractional intrinsic line-heights at these tiny sizes (6–8px);
-/// left alone, that fraction accumulates down this tightly-spaced (8–9pt) outer
-/// `VStack` — each sibling's absolute Y-origin inherits the previous ones'
-/// fractional heights — landing every downstream label on a half-pixel row,
-/// which for a hard-edged pixel font reads as a doubled/ghosted stroke. The
-/// header's "SCORE" mini-label (same type token, `ArcadeHeaderLeading`) has
-/// nothing stacked above it in its own tree, so it never inherits a fraction —
-/// which is why it renders clean while the rail's labels didn't. Rounding each
-/// group's own height up to a whole point, one at a time, stops the fraction
-/// from compounding onto the next.
+/// The STATS kicker, a HIGH SCORE card, a SCORE/STREAK row, a CLEARED TODAY
+/// card, and a bottom-pinned mascot card. Width is fixed to
+/// `theme.metrics.railWidth`. Pixel-text groups use `.pixelSnappedHeight()` to
+/// avoid fractional-height ghosting on the pixel font (see that modifier below).
 struct ArcadeRailContent: View {
     let theme: ArcadeTheme
     let done: Int
@@ -286,7 +253,7 @@ struct ArcadeRailContent: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// `.stat-card`: `--screen` fill, 2px `--line` border, r8, hard 2×2 shadow.
+    /// A stat card: fill, 2px border, hard offset shadow.
     @ViewBuilder
     private func statCard<Content: View>(palette: Palette, @ViewBuilder content: () -> Content) -> some View {
         content()
@@ -306,8 +273,6 @@ struct ArcadeRailContent: View {
     @ViewBuilder
     private func mascotCard(palette: Palette) -> some View {
         VStack(spacing: 8) {
-            // JUDGMENT CALL: the mockup's `--accent-2` (mascot feet dim tone) has
-            // no dedicated `Palette` field; approximated as a dimmed `accent`.
             ArcadeMascotMark(accent: palette.accent, accentDim: palette.accent.opacity(0.7),
                               screen: palette.segmentBackground, bobbing: true)
                 .frame(width: 48, height: 48)
@@ -331,8 +296,7 @@ struct ArcadeRailContent: View {
         .accessibilityLabel("Keep the streak")
     }
 
-    /// The cabinet surface's hard-shadow color (`--hard`), read off the palette's
-    /// `.cabinet` surface rather than re-deriving it — Arcade always sets `.cabinet`.
+    /// The cabinet surface's hard-shadow color, read off the palette.
     private func hardShadowColor(_ palette: Palette) -> Color {
         if case .cabinet(let cab) = palette.surface { return cab.hardShadow.color }
         return .clear
@@ -341,10 +305,8 @@ struct ArcadeRailContent: View {
 
 // MARK: - Pixel-snapped height (rail label ghosting fix)
 //
-// See the doc comment on `ArcadeRailContent` above. Measures a group's natural
-// height (same GeometryReader+PreferenceKey technique `SlidingSegment` already
-// uses to measure segment frames), then locks it to that height rounded up to
-// the next whole point, so it can never hand a fractional height down to its
+// Measures a group's natural height, then locks it to that height rounded up
+// to the next whole point, so it never hands a fractional height down to the
 // next sibling in the rail's outer `VStack`.
 
 private struct RailHeightSnapKey: PreferenceKey {
@@ -382,16 +344,14 @@ extension ArcadeTheme {
     public var showsTabCountBadge: Bool { false }
     public var usesCabinetRows: Bool { true }
     public var soundToggleLabel: String? { "SFX" }
-    /// Phase 5 juice (score-pop, coin burst, confetti) is Arcade-only.
+    /// Enables the score-pop / coin-burst / confetti completion effects.
     public var providesCompletionFX: Bool { true }
-    /// Parity fixes: rail sits right (task column left), footer segment is icon-only,
-    /// icon buttons + composer/footer controls wear the cabinet chrome.
+    /// Rail sits on the trailing edge (task column leads).
     public var railOnTrailing: Bool { true }
     public var showsAppearanceLabels: Bool { false }
     public var usesCabinetIconButtons: Bool { true }
     public var usesCabinetControls: Bool { true }
-    /// Mockup `.victory { position:absolute; inset:0; }` fully occludes `.list` —
-    /// the STAGE CLEAR panel covers the task rows rather than sitting above them.
+    /// The STAGE CLEAR panel covers the task list instead of sitting above it.
     public var clearedStateCoversList: Bool { true }
 
     public func headerLeading(score: Int) -> AnyView? {
@@ -407,7 +367,7 @@ extension ArcadeTheme {
                                   score: score, best: best, streak: streak))
     }
 
-    /// Verbatim from the mockup's composer placeholder (uppercase literal).
+    /// Composer placeholder text for the active tab.
     public func composerPlaceholder(isToday: Bool) -> String? {
         isToday ? "ADD A TASK…" : "ADD A QUEST…"
     }

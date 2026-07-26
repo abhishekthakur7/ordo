@@ -12,13 +12,6 @@ struct RailView: View {
     @Environment(\.ordoPalette) private var palette
 
     var body: some View {
-        // Structural capability (Phase 4): when the theme supplies full rail
-        // content (Arcade's STATS cards + mascot), render it INSTEAD of the
-        // shared kicker/ring/stats/quote body. The builder self-frames to
-        // `theme.metrics.railWidth` and self-pads, so it is returned as-is —
-        // no double-padding/double-framing here. `nil` (macOS, and every
-        // theme without this hook) falls through to the existing body,
-        // unchanged.
         if let railContent = theme.railContent(done: model.railDone, total: model.railTotal,
                                                  remaining: model.railRemaining, score: model.arcadeScore,
                                                  best: model.arcadeBest, streak: model.arcadeStreak) {

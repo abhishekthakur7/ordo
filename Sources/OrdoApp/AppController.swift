@@ -139,10 +139,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Debug-only: deterministically reveal the panel on launch for screenshot/parity
-        // tooling (the non-activating panel is otherwise summoned by the global hotkey,
-        // which is unreliable to drive headlessly). Gated behind an env var so it is inert
-        // in normal use.
+        // Debug-only: reveals the panel on launch when this env var is set.
         if ProcessInfo.processInfo.environment["ORDO_DEBUG_OPEN_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 self?.showPanel()

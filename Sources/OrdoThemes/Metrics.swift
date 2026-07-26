@@ -32,8 +32,8 @@ public struct ThemeMetrics: Sendable, Hashable {
     public var borderWidth: Double
     /// Segmented progress bar segment count (Arcade). Default 0 — unused elsewhere.
     public var progressSegments: Int
-    /// Horizontal inset from the panel's right edge to the notch/beak's right edge —
-    /// i.e. the mockup's `.notch`/`.beak` CSS `right:` value, in px (macOS 26, Arcade 44).
+    /// Horizontal inset from the panel's right edge to the notch/beak's right
+    /// edge, in points (macOS 26, Arcade 44).
     public var notchInsetFromRight: Double
 
     public init(

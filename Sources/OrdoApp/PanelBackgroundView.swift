@@ -1,11 +1,7 @@
 // OrdoApp — PanelBackgroundView: the panel's surface behind a clear SwiftUI root; also
-// the animation container (layer holds entrance/exit transform). Two mutually exclusive
-// surfaces, chosen by `palette.surface`:
-//   - `.vibrancy` (macOS glass): NSVisualEffectView + tint, sheen, hairlines, 3-layer soft
-//     shadow, glass beak. Flat opaque fill under Reduce-Transparency. UNCHANGED behavior.
-//   - `.cabinet` (Arcade cabinet chrome): opaque plastic fill, 2px border, single hard
-//     zero-blur offset shadow, top sheen, CRT/LCD overlay (scanlines+vignette or grain),
-//     bordered square notch. See `Sources/OrdoThemes/Palette.swift` for the descriptors.
+// the animation container (layer holds entrance/exit transform). Renders one of two
+// mutually exclusive surfaces chosen by `palette.surface`: macOS glass vibrancy, or
+// the Arcade cabinet's opaque plastic fill + hard shadow + CRT/LCD overlay.
 
 import AppKit
 import SwiftUI
@@ -16,14 +12,9 @@ final class PanelBackgroundView: NSView {
     /// Space reserved around the card for the shadow bloom and the beak.
     static let margin: CGFloat = 60
 
-    /// `CAGradientLayer.endPoint` offset (from the (0.5, 0.5) center, per axis) for the
-    /// cabinet CRT vignette's 100%-opacity stop, in the layer's normalized unit space.
-    /// The panel's own corner sits at a fixed unit-space offset of `(0.5, 0.5)` — i.e.
-    /// distance `sqrt(0.5² + 0.5²)` from center — regardless of the panel's real pixel
-    /// aspect ratio. Scaling that distance by the mockup's 120% gradient-box oversize
-    /// gives the endPoint offset at which the 100% stop lands 1.2x beyond the corner,
-    /// so the corner itself only ever samples ~1/1.2 of the way through the ramp. See
-    /// the `.scanlines` case of `applyOverlay(_:)` for the resulting opacity math.
+    /// `CAGradientLayer.endPoint` offset (from center) for the cabinet vignette's
+    /// 100%-opacity stop, in normalized layer space — sized so the panel's own
+    /// corner samples only partway through the ramp, not at full opacity.
     private static let vignetteCornerOversize: CGFloat = 1.2 * (CGFloat(2).squareRoot() / 2)
 
     private let metrics: ThemeMetrics
@@ -99,8 +90,6 @@ final class PanelBackgroundView: NSView {
         if #available(macOS 10.15, *) { beak.layer?.cornerCurve = .continuous }
         addSubview(beak, positioned: .below, relativeTo: shadowHost)
 
-        // Cabinet overlay scaffold: replicator (scanlines) + radial gradient (vignette /
-        // grain), both hidden until a `.cabinet` palette with a non-`.none` overlay applies.
         overlayView.wantsLayer = true
         overlayView.isHidden = true
         overlayScanlineReplicator.addSublayer(overlayScanlineTile)
@@ -126,12 +115,10 @@ final class PanelBackgroundView: NSView {
             applyCabinetSurface(cab)
         }
 
-        // Keep the hosting view topmost, and — for the cabinet surface — the CRT/LCD
-        // overlay topmost above that (it must sit above the SwiftUI content).
         if let h = hostingView { card.addSubview(h) }
         if case .cabinet(let cab) = palette.surface {
             overlayView.isHidden = false
-            card.addSubview(overlayView) // reorder to front
+            card.addSubview(overlayView)
             applyOverlay(cab.overlay)
         } else {
             overlayView.isHidden = true
@@ -140,7 +127,7 @@ final class PanelBackgroundView: NSView {
         needsLayout = true
     }
 
-    // MARK: Vibrancy surface (macOS glass) — behavior unchanged from pre-cabinet code.
+    // MARK: Vibrancy surface (macOS glass)
 
     private func applyVibrancySurface(material: MaterialIntent, palette: Palette) {
         let usesFallback = material.usesFallback
@@ -196,38 +183,26 @@ final class PanelBackgroundView: NSView {
     // MARK: Cabinet surface (Arcade) — opaque plastic, hard shadow, CRT/LCD overlay.
 
     private func applyCabinetSurface(_ cab: CabinetStyle) {
-        // No vibrancy at all on this path.
         effectView?.removeFromSuperview()
         effectView = nil
         tintView.isHidden = true
         tintView.removeFromSuperview()
 
-        // Opaque plastic fill.
         if flatView.superview == nil { card.addSubview(flatView, positioned: .below, relativeTo: nil) }
         flatView.isHidden = false
         flatView.layer?.backgroundColor = NSColor(cab.fill).cgColor
 
-        // Top sheen highlight, reusing the same gradient machinery as the glass sheen
-        // but over the top ~40% of the card (vs. glass's 30%) and cab.topSheen's color.
         sheenView.isHidden = false
         if sheenView.superview == nil { card.addSubview(sheenView) }
         applySheenGradient(topColor: cab.topSheen, extent: 0.40)
 
-        // Real 2px border + the cabinet's own corner radius (16 vs macOS's 20) — read
-        // straight from the palette so this is correct even if the view's `metrics`
-        // (captured once at construction) is stale after a live theme swap.
         cardCornerRadius = CGFloat(cab.cornerRadius)
         card.layer?.cornerRadius = cardCornerRadius
         card.layer?.borderWidth = CGFloat(cab.borderWidth)
         card.layer?.borderColor = NSColor(cab.border).cgColor
 
-        // Single hard, zero-blur offset shadow (mockup: `6px 8px 0 var(--hard)`). This
-        // reuses the same shadow-backing-view stack as the vibrancy path's 3-layer
-        // stack — passing a single synthetic `ShadowLayer` with `blur: 0` reconciles it
-        // down to exactly one view with `shadowRadius == 0`.
         applyShadow([ShadowLayer(color: cab.hardShadow.color, x: cab.hardShadow.x, y: cab.hardShadow.y, blur: 0)])
 
-        // Bordered square notch (no glass tint, no rounding): cab.fill + cab.border.
         beak.layer?.backgroundColor = NSColor(cab.fill).cgColor
         beak.layer?.borderWidth = CGFloat(cab.borderWidth)
         beak.layer?.borderColor = NSColor(cab.border).cgColor
@@ -236,10 +211,9 @@ final class PanelBackgroundView: NSView {
 
     // MARK: CRT / LCD overlay (cabinet only)
 
-    /// Configures the static (non-animated) scanline + radial layers from the palette's
-    /// `OverlayStyle`. Honors Reduce-Motion trivially (nothing here is ever animated) and
-    /// trusts the descriptor's already-softened values for Reduce-Transparency (Phase 1
-    /// tempers `scanlineOpacity`/`vignetteOpacity`/`gridOpacity` at the theme layer).
+    /// Configures the static (non-animated) scanline + radial layers from the
+    /// palette's `OverlayStyle`. Reduce-Transparency softening is applied
+    /// upstream at the theme layer, not here.
     private func applyOverlay(_ overlay: OverlayStyle) {
         switch overlay.kind {
         case .none:
@@ -247,20 +221,6 @@ final class PanelBackgroundView: NSView {
             overlayRadialLayer.isHidden = true
 
         case .scanlines:
-            // Repeating 1px dark lines every `scanlinePitch`, then a soft radial
-            // vignette on top (mockup: rgba(0,0,0,0.22) lines @ opacity 0.42, plus
-            // radial(120% 120% at 50% 50%, transparent 58%, rgba(0,0,0,0.55) 100%)).
-            //
-            // The mockup's gradient box is sized 120% of the panel, so the panel's own
-            // corners only ever sample ~1/1.2 of the way through the 58%→100% ramp
-            // (~0.33 opacity), not the full 0.55 — the vignette darkens the mid-field
-            // but leaves edge-adjacent content (accent add button, status number,
-            // composer "+") close to full brightness. `endPoint` at exactly (1, 1)
-            // previously placed the *box corner itself* at (or past) the 100% stop,
-            // crushing the edges to full 0.55. Pushing `endPoint` out along the same
-            // diagonal so the 100%-stop circle has radius `1.2x` the center→corner
-            // distance reproduces that: the corner now lands at t ≈ 1/1.2 ≈ 0.83,
-            // i.e. opacity ≈ 0.55 * (0.83 - 0.58) / (1 - 0.58) ≈ 0.33.
             overlayScanlineReplicator.isHidden = false
             overlayScanlineTile.backgroundColor = NSColor.black.withAlphaComponent(0.22).cgColor
             overlayScanlineReplicator.opacity = Float(overlay.scanlineOpacity)
@@ -277,10 +237,6 @@ final class PanelBackgroundView: NSView {
             overlayRadialLayer.endPoint = CGPoint(x: 0.5 + cornerOversize, y: 0.5 + cornerOversize)
 
         case .lcdGrain:
-            // Very subtle grey-green radial darkening at the corners (mockup:
-            // radial-gradient(circle at 50% 50%, transparent 70%, rgba(120,130,90,0.06) 100%)).
-            // `vignetteOpacity` is 0 for the light palette; the DMG grain's intensity is
-            // carried on `gridOpacity` instead (ArcadeTheme sets 0.10 there, 0 on vignette).
             overlayScanlineReplicator.isHidden = true
 
             overlayRadialLayer.isHidden = false
@@ -361,8 +317,7 @@ final class PanelBackgroundView: NSView {
         layoutScanlineReplicator()
 
         // Each shadow-backing view sits exactly on the card and casts through a rounded
-        // silhouette matching the panel corners (read from the card's live corner radius,
-        // not `metrics`, so this stays correct across a live theme swap).
+        // silhouette matching the panel corners.
         let shadowPath = CGPath(
             roundedRect: CGRect(origin: .zero, size: cardRect.size),
             cornerWidth: cardCornerRadius,
@@ -374,7 +329,7 @@ final class PanelBackgroundView: NSView {
 
         // Beak: near the card's top-right, poking upward toward the glyph.
         let bs = metrics.beakSize
-        let insetFromRight: CGFloat = metrics.notchInsetFromRight + bs / 2 // mockup notch/beak right: + half width → center
+        let insetFromRight: CGFloat = metrics.notchInsetFromRight + bs / 2
         let centerX = cardRect.maxX - insetFromRight
         let centerY = cardRect.maxY - 1 // sit right at the card's top edge
         beak.frame = NSRect(x: centerX - bs / 2, y: centerY - bs / 2, width: bs, height: bs)

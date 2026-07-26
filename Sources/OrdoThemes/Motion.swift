@@ -11,12 +11,9 @@ public enum MotionCurve: Sendable, Hashable {
     case easeIO
     /// Linear timing.
     case linear
-    /// A stepped/quantized curve holding at `n` discrete positions for the whole
-    /// duration (CSS `steps(n)`), used by the pixel checkbox tick and the SFX knob.
-    /// Not a cubic bezier — SwiftUI has no native stepped-easing primitive, so
-    /// `animation(duration:)` falls back to `.linear` (see its doc comment) and
-    /// callers that need the real discrete hold should use `stepCount` to drive a
-    /// `KeyframeAnimator` with `n` back-to-back `LinearKeyframe` holds instead.
+    /// A stepped/quantized curve holding at `n` discrete positions (used by the
+    /// pixel checkbox tick and the SFX knob). Not a cubic bezier — use
+    /// `stepCount` with a `KeyframeAnimator` for the true discrete hold.
     case steps(Int)
 
     /// The cubic-bezier control points, or nil for linear/steps (neither is a bezier).
@@ -30,22 +27,16 @@ public enum MotionCurve: Sendable, Hashable {
         }
     }
 
-    /// The number of discrete steps for `.steps(n)`, else nil. Views that need the
-    /// true quantized motion (pixel checkbox tick, SFX knob) should branch on this
-    /// and drive a `KeyframeAnimator` with `n` discrete `LinearKeyframe` holds rather
-    /// than using `animation(duration:)`, which only offers the smooth fallback.
+    /// The number of discrete steps for `.steps(n)`, else nil. Drive a
+    /// `KeyframeAnimator` with this many holds for true quantized motion.
     public var stepCount: Int? {
         if case .steps(let n) = self { return n }
         return nil
     }
 
-    /// A SwiftUI `Animation` for this curve at the given duration.
-    ///
-    /// NOTE: SwiftUI has no native stepped/quantized easing curve. For `.steps(n)`
-    /// this intentionally returns a smooth `.linear(duration:)` fallback — it is
-    /// NOT a faithful reproduction of CSS `steps(n)`. Consumers that need the real
-    /// discrete hold-and-jump motion (the pixel checkbox tick, the SFX knob) must
-    /// read `stepCount` and drive a `KeyframeAnimator` themselves.
+    /// A SwiftUI `Animation` for this curve at the given duration. For
+    /// `.steps(n)` this returns a smooth `.linear` fallback, not a true
+    /// stepped motion — use `stepCount` with a `KeyframeAnimator` for that.
     public func animation(duration: Double) -> Animation {
         if let p = controlPoints {
             return .timingCurve(p.0, p.1, p.2, p.3, duration: duration)

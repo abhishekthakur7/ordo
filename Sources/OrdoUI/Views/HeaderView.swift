@@ -36,12 +36,9 @@ struct HeaderView: View {
         .padding(EdgeInsets(top: 15, leading: 18, bottom: 10, trailing: 12))
     }
 
-    /// The header's leading cluster. Arcade's `headerLeading` builder supplies a
-    /// self-laying-out brand mark + "ORDO" wordmark + SCORE mini (it already
-    /// contains its own internal spacer), replacing the greeting/date stack
-    /// entirely — the trailing icon buttons (gear/expand) stay put either way.
-    /// `nil` (macOS, and every theme without this hook) keeps the current
-    /// greeting/date `VStack` byte-identical to before this hook existed.
+    /// The header's leading cluster. When the theme supplies `headerLeading`
+    /// (Arcade's brand mark + wordmark + score), it replaces the greeting/date
+    /// stack entirely; `nil` keeps the default greeting/date `VStack`.
     @ViewBuilder
     private var leadingContent: some View {
         if let leading = theme.headerLeading(score: model.arcadeScore) {

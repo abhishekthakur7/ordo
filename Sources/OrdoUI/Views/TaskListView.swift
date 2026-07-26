@@ -15,20 +15,12 @@ struct TaskListView: View {
     @Environment(\.ordoPalette) private var palette
 
     @State private var draggingID: UUID?
-    // Measured viewport height (mockup `.viewport{ position:relative }`, the
-    // container `.victory{ position:absolute; inset:0 }` covers) — a plain
-    // `.frame(maxHeight: .infinity)` on a `ScrollView`'s content is a no-op when
-    // that content is shorter than the visible area (the scroll axis is proposed
-    // an unbounded/ideal height, not the viewport's bound), so covering the list
-    // needs this container's own measured height fed back in as a `minHeight`.
+    /// Measured viewport height, fed back as a `minHeight` so the all-cleared
+    /// state can cover the list even when its own content is shorter.
     @State private var viewportHeight: CGFloat = 0
 
     var body: some View {
         ScrollView {
-            // Cabinet rows (Arcade) cast a hard offset shadow that bleeds 2–3pt
-            // past their own frame (mockup `.list{ gap:6px }`), so they need a
-            // real gap to avoid the next row's opaque card painting over the
-            // shadow bleed. macOS rows have no shadow bleed and keep spacing 0.
             LazyVStack(alignment: .leading, spacing: theme.usesCabinetRows ? 6 : 0) {
                 content
             }
@@ -53,10 +45,6 @@ struct TaskListView: View {
             theme.firstRunEmptyState()
                 .frame(maxWidth: .infinity)
         } else if model.isAllClearedToday && theme.clearedStateCoversList {
-            // Arcade: the victory panel COVERS the entire list viewport (mockup
-            // `.victory{ position:absolute; inset:0; }` occludes `.list`) — the
-            // done rows are hidden behind it, not merely dimmed beneath it, so the
-            // task-row ForEach(s) are skipped entirely while cleared.
             theme.allClearedState()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(minHeight: viewportHeight)
@@ -87,13 +75,6 @@ struct TaskListView: View {
                     }
                 }
             } else {
-                // Arcade (and any future `showsDoneSection == false` theme): every
-                // active-tab task in ONE flat ForEach, stored order, no "Completed"
-                // header and no separate done section — done rows dim in place
-                // (TaskRowView handles the opacity + strikethrough), and there is
-                // no reflow to choreograph (`AppModel.toggle` already skips it).
-                // The 1-based position is threaded through as `index` so the
-                // cabinet row can show a pixel "01"/"02" trailing badge.
                 ForEach(Array(model.allRows.enumerated()), id: \.element.id) { i, task in
                     row(task, index: i + 1)
                         .modifier(ReorderModifier(

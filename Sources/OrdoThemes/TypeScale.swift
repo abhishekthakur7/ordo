@@ -1,11 +1,8 @@
 import SwiftUI
 
-/// Which font face a `TypeToken` should resolve to. `.system` keeps the current SF
-/// Pro behavior (used by every macOS token); `.named` resolves a bundled custom font
-/// by PostScript/family name (e.g. Arcade's "Press Start 2P" or "Space Grotesk").
-/// Runtime registration of the named font (via `CTFontManagerRegisterFontsForURL`)
-/// is a separate concern owned by a sibling `FontRegistrar` type — this enum only
-/// carries the *name* to resolve, so it has no dependency on that type.
+/// Which font face a `TypeToken` should resolve to. `.system` keeps the SF Pro
+/// behavior every macOS token uses; `.named` resolves a bundled custom font by
+/// family name (e.g. Arcade's "Press Start 2P" or "Space Grotesk").
 public enum FontFamily: Sendable, Hashable {
     case system
     case named(String)
@@ -25,9 +22,7 @@ public struct TypeToken: Sendable, Hashable {
     public var monospacedDigit: Bool
     /// Whether the text should render uppercased (CSS `text-transform: uppercase`).
     public var uppercase: Bool
-    /// Which font face to resolve `font` to. Defaults to `.system` (SF Pro) so every
-    /// existing macOS token is unaffected. Arcade tokens can set `.named("Press Start 2P")`
-    /// or `.named("Space Grotesk")`.
+    /// Which font face to resolve `font` to. Defaults to `.system` (SF Pro).
     public var fontFamily: FontFamily
 
     public init(
@@ -54,10 +49,8 @@ public struct TypeToken: Sendable, Hashable {
     /// Extra leading for `.lineSpacing(_:)` (SwiftUI adds this *between* lines).
     public var lineSpacing: Double { max(0, size * (lineHeightMultiple - 1)) }
 
-    /// The font for this role, digit style applied. Resolves `.system` to SF Pro via
-    /// `Font.system(size:weight:)` (unchanged behavior); resolves `.named` to the
-    /// bundled custom font via `Font.custom(_:size:)`, still applying `weight` (some
-    /// custom faces, like Press Start 2P, are single-weight and will simply ignore it).
+    /// The font for this role, digit style applied. Resolves `.named` to the
+    /// bundled custom font, still applying `weight` where the face supports it.
     public var font: Font {
         var f: Font
         switch fontFamily {

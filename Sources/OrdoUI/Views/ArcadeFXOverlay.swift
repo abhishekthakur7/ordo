@@ -1,23 +1,10 @@
-// OrdoUI — ArcadeFXOverlay: Phase 5 "juice" for the Arcade theme. A pointer-events-off
-// overlay above `PanelRootView.mainColumn` that observes `AppModel.arcadeFXEvent` and
-// spawns transient particles: a coin-gold "+100" score-pop + a 9-bit radial burst on
-// task completion, and a 34-piece confetti fall on stage-clear. Mounted ONLY when
-// `model.theme.providesCompletionFX` is true (Arcade); every other theme never
-// instantiates this view, so macOS is byte-for-byte unaffected.
-//
-// Reduce-Motion is a full no-op: `AppModel` never sets `arcadeFXEvent` while
-// `reduceMotion` is true (see `AppModel.toggle`), and this view's own `onChange`
-// handler re-checks the environment flag defensively before spawning anything, so
-// even a hypothetical stale/late event can't animate.
-//
-// Row flash and segment-pop (the mockup's other two completion beats,
-// `celebrateRow`'s `row.classList.add('flash')` and `popSegments()`) are
-// DELIBERATELY NOT implemented here: both need geometry/state this
-// panel-level overlay doesn't have — row flash needs the completed row's own
-// view (`TaskRowView`, owned by the concurrent Phase 6/7 agent this phase),
-// and segment-pop needs the segbar's own view (`ArcadeStatusRow` in
-// `ArcadeStructuralViews.swift`, also off-limits this phase). Both are
-// documented future refinements rather than approximated badly from here.
+// OrdoUI — ArcadeFXOverlay: completion "juice" for the Arcade theme. A
+// pointer-events-off overlay above `PanelRootView.mainColumn` that observes
+// `AppModel.arcadeFXEvent` and spawns transient particles: a coin-gold "+100"
+// score-pop + radial burst on task completion, and a confetti fall on
+// stage-clear. Mounted only when `model.theme.providesCompletionFX` is true
+// (Arcade); every other theme never instantiates this view. Reduce-Motion is
+// a full no-op — `AppModel` never sets `arcadeFXEvent` while it's on.
 
 import SwiftUI
 import OrdoThemes
@@ -62,32 +49,23 @@ struct ArcadeFXOverlay: View {
 
     // MARK: Score-pop + burst (on task complete)
 
-    /// JUDGMENT CALL — anchor position: the mockup anchors `scorePop`/`burst` at
-    /// the completed row's own checkbox via real DOM geometry (`rel(check)`).
-    /// This overlay sits above the ENTIRE `mainColumn` (header, tab bar, status
-    /// row, list, composer, footer) with no per-row coordinate threaded up to
-    /// it, and adding that plumbing would mean touching `TaskRowView` — Agent
-    /// B's file this phase. As a reasonable approximation, every completion
-    /// anchors to a fixed point near the top-left of the task list, just under
-    /// where the status row sits (the mockup's own completions cluster near
-    /// there in the compact panel too, since new/just-toggled rows are close
-    /// to the top).
+    /// Anchors every completion at a fixed point near the top-left of the task
+    /// list — no per-row coordinate is threaded up to this panel-level overlay.
     private func celebrateComplete(in size: CGSize) {
         let anchor = CGPoint(x: size.width * 0.22, y: size.height * 0.30)
         spawnScorePop(at: anchor)
         spawnBurst(at: anchor)
     }
 
-    /// `.score-pop`: 780ms, `--ease-out`, rising ~46pt and fading (mockup:
-    /// `translate(-50%,-165%) scale(1.1)`, opacity → 0).
+    /// Spawns a score-pop that rises ~46pt and fades over 780ms.
     private func spawnScorePop(at anchor: CGPoint) {
         let pop = ScorePopParticle(anchor: anchor)
         scorePops.append(pop)
         remove(after: 0.85) { scorePops.removeAll { $0.id == pop.id } }
     }
 
-    /// `.bit` burst: 9 pieces, `i % 3 == 0` coin-gold else accent, radial
-    /// 26–52pt at a jittered angle, scaling to 0.4 and fading over 560ms.
+    /// Spawns a 9-piece radial burst (every third piece coin-gold, else
+    /// accent), scaling down and fading over 560ms.
     private func spawnBurst(at anchor: CGPoint) {
         let count = 9
         for i in 0..<count {
@@ -103,9 +81,8 @@ struct ArcadeFXOverlay: View {
 
     // MARK: Confetti (on stage-clear)
 
-    /// `confetti()`: 34 pieces in [accent, coin, accent-2] falling from the
-    /// top edge to past the panel bottom with a random rotation, staggered by
-    /// a 0–250ms delay, over 1300ms.
+    /// Spawns 34 confetti pieces falling from the top edge past the panel
+    /// bottom with a random rotation, staggered over 1300ms.
     private func fireConfetti(in size: CGSize) {
         let count = 34
         let colors: [ConfettiParticle.ColorRole] = [.accent, .coin, .accentDim]
@@ -123,9 +100,8 @@ struct ArcadeFXOverlay: View {
         }
     }
 
-    /// Schedules `body` on the main queue after `seconds` — the particle's own
-    /// CSS-equivalent duration plus slack (mirrors the mockup's `setTimeout`
-    /// removal), so array growth is bounded and nothing leaks.
+    /// Runs `body` on the main queue after `seconds`, so each particle removes
+    /// itself and array growth stays bounded.
     private func remove(after seconds: Double, _ body: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { body() }
     }
@@ -158,18 +134,14 @@ private struct ConfettiParticle: Identifiable {
 
 // MARK: - Particle views
 
-/// The mockup's `.score-pop`: "+100" in coin-gold Press Start 2P, rising and
-/// fading over 780ms `--ease-out`.
+/// "+100" in coin-gold, rising and fading over 780ms.
 private struct ScorePopView: View {
     let anchor: CGPoint
     let palette: Palette
 
     @State private var animateOut = false
 
-    /// Matches the mockup's `.score-pop{ font-size:12px }` — not one of the
-    /// theme's named `TypeScale` roles (those are sized for persistent UI,
-    /// not a transient particle), so built inline like `arcadeMiniLabelType`
-    /// in `ArcadeStructuralViews.swift`.
+    /// Sized for this transient particle; not one of the shared `TypeScale` roles.
     private static let type = TypeToken(size: 12, weight: .regular, fontFamily: .named(FontRegistrar.pressStart2PFamily))
 
     var body: some View {
@@ -188,8 +160,7 @@ private struct ScorePopView: View {
     }
 }
 
-/// The mockup's `.bit`: a 6×6 square flying radially outward, scaling down to
-/// 0.4 and fading over 560ms `--ease-out`.
+/// A 6×6 square flying radially outward, scaling down and fading over 560ms.
 private struct BitView: View {
     let bit: BitParticle
     let palette: Palette
@@ -214,13 +185,12 @@ private struct BitView: View {
     }
 }
 
-/// The mockup's `.confetti`: a 7×7 square falling from the top edge past the
-/// panel bottom while rotating, over 1300ms `--ease-out`, staggered by its
-/// own random delay.
+/// A 7×7 square falling from the top edge past the panel bottom while
+/// rotating, staggered by its own delay.
 private struct ConfettiView: View {
     let piece: ConfettiParticle
     let palette: Palette
-    /// The y-position past the panel bottom to fall to (`panel.clientHeight + 30`).
+    /// The y-position past the panel bottom to fall to.
     let floor: CGFloat
 
     @State private var animateOut = false
@@ -229,10 +199,6 @@ private struct ConfettiView: View {
         switch piece.colorRole {
         case .accent: return palette.accent
         case .coin: return palette.coin
-        // JUDGMENT CALL: the mockup's `--accent-2` (a dimmer accent tone used
-        // only by confetti) has no dedicated `Palette` field — approximated as
-        // `accent` at 70% opacity, mirroring the same call already made for
-        // the rail mascot's `accentDim` in `ArcadeStructuralViews.swift`.
         case .accentDim: return palette.accent.opacity(0.7)
         }
     }
