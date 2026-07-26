@@ -1,0 +1,30 @@
+# Swift Package Manager / build output
+.build/
+.build-*/
+.swiftpm/
+dist/
+*.app
+
+# Xcode local state
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# macOS / editor cruft
+.DS_Store
+*.swp
+*~
+*.tmp
+
+# Agent tooling & tool state (generated/local; skills-lock.json stays tracked)
+.serena/
+.claude/skills/
+.agents/skills/
+skills-lock.json
+
+# Design docs, specs & working prompts (kept local per project preference)
+PLAN.md
+ARCHITECTURE.md
+REQUIREMENTS.md
+mockups/
+prompts/
