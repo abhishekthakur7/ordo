@@ -123,13 +123,18 @@ struct ArcadeStatusRow: View {
 
     var body: some View {
         Themed(theme: theme) { palette, reduceMotion in
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
+            // Mockup `.status { display:flex; align-items:center; gap:12px;
+            // padding:12px 15px 10px }` — the whole row is vertically centered and
+            // inset 15px from the panel edges (so the big number never collides with
+            // the left border), with the `.remain` number+caption baseline-aligned.
+            HStack(alignment: .center, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Text("\(displayNumber)")
                         .typeToken(ArcadeTheme.statusNumberType)
                         .foregroundStyle(palette.accent)
                         .shadow(color: palette.glow, radius: 6)
                         .shadow(color: palette.glow, radius: 1)
+                        .fixedSize()
 
                     VStack(alignment: .leading, spacing: 0) {
                         Text(captionLines.0)
@@ -137,12 +142,14 @@ struct ArcadeStatusRow: View {
                     }
                     .typeToken(theme.typeScale.ringSub)
                     .foregroundStyle(palette.ink3)
+                    .fixedSize()
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(accessibilitySummary)
 
                 segbar(palette: palette, reduceMotion: reduceMotion)
             }
+            .padding(EdgeInsets(top: 12, leading: 15, bottom: 10, trailing: 15))
         }
     }
 
