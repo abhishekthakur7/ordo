@@ -16,9 +16,12 @@ xcuserdata/
 *~
 *.tmp
 
-# Agent tooling & tool state (generated/local; skills-lock.json stays tracked)
+# Local agent/editor tooling & state (skills-lock.json stays tracked)
 .serena/
-.claude/skills/
+.claude/
+.codegraph/
+.cursor/
+.mcp.json
 .agents/skills/
 skills-lock.json
 
