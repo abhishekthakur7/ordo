@@ -67,12 +67,10 @@ private struct ZenVerticalText: View {
 struct ZenHeaderLeading: View {
     let theme: ZenInkTheme
 
-    // CSS `.head-id` geometry: baseline alignment makes the 23pt wordmark begin
-    // 14pt below the container top. The constrained `writing-mode: vertical-rl`
-    // subtitle wraps into two right-to-left columns in the mock; SwiftUI needs
-    // that composition and its optical top inset expressed explicitly.
+    // The constrained `writing-mode: vertical-rl` subtitle wraps into two
+    // right-to-left columns in the mock. Its small optical inset is local to
+    // that subtitle; the wordmark itself begins at the header's top edge.
     private static let verticalLabelHeight: CGFloat = 34
-    private static let wordmarkTopInset: CGFloat = 14
     private static let verticalLabelTopInset: CGFloat = 5
 
     var body: some View {
@@ -87,7 +85,6 @@ struct ZenHeaderLeading: View {
                         .foregroundStyle(palette.ink)
                 }
                 .fixedSize()
-                .padding(.top, Self.wordmarkTopInset)
 
                 HStack(alignment: .top, spacing: 4) {
                     // CSS vertical-rl fills the right column first.
