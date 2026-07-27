@@ -429,13 +429,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Motion fixtures must show a settled panel before the task mutation starts;
-    /// otherwise panel entrance and completion overlap and neither can be judged.
+    /// Delays fixture mutations until the panel entrance has settled.
     private func toggleFixtureTaskAfterEntrance(ordinal: UInt8) {
-        // WindowServer may not register the non-activating panel until roughly
-        // two seconds after process launch. `applyVisualFixture` itself begins
-        // at 0.6s, so this additional delay keeps the full mutation observable
-        // in an isolated-window recording.
+        // Non-activating panels need extra WindowServer registration time for recordings.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
             self?.model.toggle(UUID(uuid: (
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ordinal

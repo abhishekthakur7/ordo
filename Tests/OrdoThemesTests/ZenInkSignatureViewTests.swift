@@ -98,9 +98,7 @@ final class ZenInkSignatureViewTests: XCTestCase {
     }
 
     func testInitiallyDoneHankoIsVisibleAndAlreadySettled() {
-        // Give the hosted view one appearance cycle. An initially-completed
-        // hanko must remain at its 27pt settled stamp scale, rather than replay
-        // the larger first keyframe after it has been inserted into a fixture.
+        // After one appearance cycle, initially completed hanko must remain settled.
         let canvas = CGSize(width: 80, height: 80)
         let immediate = render(
             AnyView(OrdoZenHanko(theme: theme, done: true)),

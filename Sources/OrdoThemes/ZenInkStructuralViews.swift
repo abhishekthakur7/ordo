@@ -67,9 +67,7 @@ private struct ZenVerticalText: View {
 struct ZenHeaderLeading: View {
     let theme: ZenInkTheme
 
-    // The constrained `writing-mode: vertical-rl` subtitle wraps into two
-    // right-to-left columns in the mock. Its small optical inset is local to
-    // that subtitle; the wordmark itself begins at the header's top edge.
+    // The mock's vertical-rl subtitle fills the right column first.
     private static let verticalLabelHeight: CGFloat = 34
     private static let verticalLabelTopInset: CGFloat = 5
 
@@ -136,9 +134,7 @@ struct ZenHeaderTrailing: View {
                     )
                     .animation(reduceMotion ? nil : theme.motion.ring.standard, value: done)
                     .animation(reduceMotion ? nil : theme.motion.ring.standard, value: total)
-                // The mock swaps the glyph: old value fades upward, changes at
-                // 200 ms, then the new value settles. A numeric digit morph is
-                // noticeably busier during task completion.
+                // The mock uses a glyph swap instead of a numeric digit morph.
                 ZenRemainingCount(
                     theme: theme,
                     palette: palette,
@@ -281,8 +277,7 @@ struct ZenTabBar: View {
 
 // MARK: - Row trailing accessory
 
-/// Every Zen row reserves a 27-point vermilion seal slot. Its inner treatment
-/// communicates completion while the stable outer geometry keeps rows aligned.
+/// Every Zen row reserves a 27-point seal slot to keep rows aligned.
 struct ZenRowTrailing: View {
     let theme: ZenInkTheme
     let done: Bool

@@ -31,9 +31,7 @@ struct TaskRowView: View {
     private var age: Int { model.age(of: task) }
     private var triage: Bool { model.isInTriage(task) }
 
-    /// A concrete trailing accessory already participates in the row HStack and
-    /// reserves its own gutter. Applying the theme's fallback title padding as
-    /// well would reserve Zen's seal twice and rewrap otherwise single-line text.
+    /// A trailing accessory reserves its own gutter; avoid double-reserving Zen's seal.
     private var titleTrailingPadding: CGFloat {
         let accessory = theme.rowTrailingAccessory(
             done: task.done,

@@ -98,9 +98,7 @@ struct OrdoZenMark: View {
                         LinearKeyframe(1.0, duration: 0.001)
                     } else {
                         LinearKeyframe(0.2, duration: 0.001)
-                        // Automatic cubic velocities amplify the near-zero first
-                        // keyframe into a massive intermediate scale. CSS eases
-                        // between these two authored bounds without overshooting.
+                        // Zero velocities prevent the 1 ms setup keyframe from overshooting.
                         CubicKeyframe(
                             1.0,
                             duration: sequence.fillDuration,
@@ -135,9 +133,7 @@ struct OrdoZenTaskTitle: View {
                 // both ink color and strike state together when motion is off.
                 .animation(reduceMotion ? nil : theme.motion.titleColorFade.standard, value: done)
                 .fixedSize(horizontal: false, vertical: true)
-                // This overlay must see the Text's own rendered bounds. Applying
-                // the flexible row-column frame first made a short title's strike
-                // span all of the remaining row width.
+                // Apply the flexible frame after the overlay so strike bounds match text.
                 .overlay(alignment: .leading) {
                     GeometryReader { geometry in
                         BrushStrokeShape(.strike)
@@ -154,8 +150,6 @@ struct OrdoZenTaskTitle: View {
                     }
                     .allowsHitTesting(false)
                 }
-                // Keep this expansion outside the measured Text wrapper: titles
-                // still receive their row's width proposal and can wrap normally.
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -363,9 +357,7 @@ struct OrdoZenAllClear: View {
     var body: some View {
         Themed(theme: theme) { palette, _ in
             VStack(spacing: 0) {
-                // The mock's all-clear mark is the completed brush path alone.
-                // Leaving the progress track mounted paints a visible hairline
-                // across the deliberate opening in the ensō.
+                // The mock hides the track to preserve the ensō's deliberate opening.
                 OrdoZenEnso(
                     theme: theme,
                     done: 1,
@@ -403,9 +395,7 @@ struct OrdoZenAllClear: View {
 public struct OrdoZenHanko: View {
     public let theme: ZenInkTheme
     public let done: Bool
-    /// An initially completed row is already settled. Only a live open → done
-    /// transition advances this trigger, so keeping the seal mounted as a row
-    /// slot never replays a stamp just because the view first appears.
+    /// Initial completion is settled; only a live open → done transition stamps.
     @State private var stampTrigger = 0
     @State private var hasAppeared = false
 
@@ -436,9 +426,7 @@ public struct OrdoZenHanko: View {
                     LinearKeyframe(StampValue(scale: 1, rotation: -5), duration: 0.001)
                 } else {
                     LinearKeyframe(StampValue(scale: 1.62, rotation: -15), duration: 0.001)
-                    // Keep each segment inside its authored CSS keyframe bounds.
-                    // Inferred cubic velocities around the 1 ms setup keyframe
-                    // otherwise produce a several-hundred-point transient stamp.
+                    // Zero velocities prevent the 1 ms setup keyframe from overshooting.
                     CubicKeyframe(
                         StampValue(scale: 0.88, rotation: -2),
                         duration: 0.209,
@@ -467,8 +455,7 @@ public struct OrdoZenHanko: View {
             hasAppeared = true
         }
         .onChange(of: done) { previous, current in
-            // Appearance establishes the settled state; only a subsequent
-            // false → true change runs the authored KeyframeAnimator sequence.
+            // Initial appearance is settled; only live false → true transitions stamp.
             guard hasAppeared, !previous, current else { return }
             stampTrigger &+= 1
         }

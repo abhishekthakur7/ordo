@@ -77,8 +77,6 @@ struct HeaderView: View {
     private func toggleExpand() {
         let next = !model.settings.panelExpanded
         model.settings.panelExpanded = next
-        // The chrome bridge schedules one coalesced post-layout frame morph, so
-        // this button and ⌘E cannot start competing AppKit transitions.
         chrome.setExpanded(next)
     }
 }

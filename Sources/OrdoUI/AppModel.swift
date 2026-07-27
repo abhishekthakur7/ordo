@@ -56,9 +56,8 @@ public final class AppModel {
     public var doneRows: [OrdoTask] { tab == .today ? doneToday : doneLongterm }
 
     /// All active-tab tasks in stored order, for themes where
-    /// `showsDoneSection == false`, which render one flat list. Row values come
-    /// from the observed display snapshots so a flat list is invalidated together
-    /// with its remaining count; the store supplies only the canonical ID order.
+    /// `showsDoneSection == false`, which render one flat list. Observed snapshots
+    /// provide row values; the store supplies canonical ID order.
     public var allRows: [OrdoTask] {
         let currentRows = Dictionary(
             uniqueKeysWithValues: (openRows + doneRows).map { ($0.id, $0) }
@@ -86,9 +85,7 @@ public final class AppModel {
     public var reduceMotion = false {
         didSet {
             syncSystemAppearance()
-            // The shell owns the live frame timer. Re-submit the semantic target
-            // when this accessibility setting changes so an active morph can be
-            // ended immediately rather than waiting for its next display tick.
+            // Re-submit the target so an active morph settles when accessibility changes.
             chrome?.setExpanded(settings.panelExpanded)
         }
     }
@@ -97,11 +94,7 @@ public final class AppModel {
     /// shell). Only consulted when `settings.appearance == .system`.
     public var systemIsDark = false
 
-    /// The live panel expansion fraction. `panelExpanded` remains the persisted
-    /// semantic target, while the AppKit shell advances this value in lockstep
-    /// with its real window-frame tween. Keeping the intermediate state here
-    /// lets SwiftUI lay out one hierarchy for the exact native-window geometry
-    /// instead of starting a second implicit endpoint animation.
+    /// Live shell-driven progress keeps SwiftUI layout aligned with the window frame.
     public private(set) var panelExpansionProgress: CGFloat
 
     // MARK: Composer
@@ -168,8 +161,6 @@ public final class AppModel {
         rebuild()
     }
 
-    /// Updates the shell-owned expansion progress. `AppModel` is main-actor
-    /// isolated, so every observed layout update stays on the UI thread.
     public func setPanelExpansionProgress(_ progress: CGFloat) {
         panelExpansionProgress = min(max(progress, 0), 1)
     }

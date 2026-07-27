@@ -226,8 +226,7 @@ struct SoundToggle: View {
             model.setSoundEnabled(!on)
         } label: {
             StrokeIcon(systemName: on ? "speaker.wave.2" : "speaker.slash", size: 16, weight: .medium)
-                // Mock `.snd`: enabled rests at ink-45, disabled at ink-30,
-                // and either state rises to full ink on hover.
+                // Mock `.snd`: hover uses full ink; resting opacity reflects state.
                 .foregroundStyle(isHovering ? palette.ink : (on ? palette.ink3 : palette.inkFaint))
                 .frame(width: 34, height: 30)
                 .background(

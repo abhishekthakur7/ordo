@@ -40,9 +40,7 @@ public struct PanelRootView: View {
 
     private var expanded: Bool { model.settings.panelExpanded }
 
-    /// This is driven by `PanelController` on each manual window-frame tick.
-    /// It deliberately is not animated in SwiftUI: the native frame and every
-    /// interior layout quantity must use the same instantaneous value.
+    /// Shell-driven progress; SwiftUI must not animate it independently.
     private var expansionProgress: CGFloat { model.panelExpansionProgress }
 
     // MARK: Body
@@ -83,8 +81,7 @@ public struct PanelRootView: View {
         return RailView(model: model)
             .offset(x: -10 * (1 - expansionProgress))
             .frame(width: model.theme.metrics.railWidth * expansionProgress, alignment: .leading)
-            // Mock: rail geometry follows the 620 ms drawer curve, while its
-            // visibility uses the shorter 380 ms CSS `ease` transition.
+            // Mock: rail visibility uses a shorter CSS transition than its geometry.
             .opacity(expanded ? 1 : 0)
             .animation(
                 reduceMotion
@@ -120,9 +117,7 @@ public struct PanelRootView: View {
             FooterView(model: model)
         }
         .padding(mainColumnInsets)
-        // Zen's flexible main column shares the exact shell-driven fraction with
-        // the rail, so its footer and other full-width controls never animate
-        // independently of the window during an expand/collapse reversal.
+        // Share shell-driven progress so the main column cannot animate independently.
         .frame(width: resolvedMainColumnWidth)
         .overlay(alignment: .bottom) { undoToast }
         .overlay { settingsOverlay }
@@ -243,8 +238,6 @@ public struct PanelRootView: View {
     private func toggleExpand() {
         let next = !model.settings.panelExpanded
         model.settings.panelExpanded = next
-        // The chrome bridge defers and coalesces frame work after this SwiftUI
-        // state change; all expand affordances use that same sequencing.
         chrome.setExpanded(next)
     }
 }
