@@ -120,13 +120,11 @@ struct ArcadeStatusRow: View {
                         .shadow(color: palette.glow, radius: 1)
                         .fixedSize()
 
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(captionLines.0)
-                        Text(captionLines.1)
-                    }
+                    Text("\(captionLines.0)\n\(captionLines.1)")
                     .typeToken(theme.typeScale.ringSub)
                     .foregroundStyle(palette.ink3)
                     .fixedSize()
+                    .offset(y: -12)
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(accessibilitySummary)
@@ -160,6 +158,7 @@ struct ArcadeStatusRow: View {
                 }
             }
             .frame(height: 14)
+            .offset(y: -7)
             .accessibilityHidden(true)
         }
     }
