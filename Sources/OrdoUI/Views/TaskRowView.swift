@@ -31,6 +31,19 @@ struct TaskRowView: View {
     private var age: Int { model.age(of: task) }
     private var triage: Bool { model.isInTriage(task) }
 
+    /// A concrete trailing accessory already participates in the row HStack and
+    /// reserves its own gutter. Applying the theme's fallback title padding as
+    /// well would reserve Zen's seal twice and rewrap otherwise single-line text.
+    private var titleTrailingPadding: CGFloat {
+        let accessory = theme.rowTrailingAccessory(
+            done: task.done,
+            age: age,
+            triage: triage,
+            index: index
+        )
+        return accessory == nil ? theme.layout.rowTitleTrailingReserve : 0
+    }
+
     /// Zen's title reserve marks the only current row treatment that asks for
     /// the paper-light 0.992 press echo. Legacy/cabinet reserves are zero, so
     /// their geometry and interaction remain unchanged without a new capability.
@@ -186,11 +199,11 @@ struct TaskRowView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, theme.layout.rowTitleTrailingReserve)
+                .padding(.trailing, titleTrailingPadding)
         } else {
             theme.taskTitle(task.title, done: task.done)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, theme.layout.rowTitleTrailingReserve)
+                .padding(.trailing, titleTrailingPadding)
                 .help(task.title)
                 .onTapGesture { handleTitleTap() }
         }

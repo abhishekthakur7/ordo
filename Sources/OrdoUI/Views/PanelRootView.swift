@@ -40,6 +40,11 @@ public struct PanelRootView: View {
 
     private var expanded: Bool { model.settings.panelExpanded }
 
+    /// This is driven by `PanelController` on each manual window-frame tick.
+    /// It deliberately is not animated in SwiftUI: the native frame and every
+    /// interior layout quantity must use the same instantaneous value.
+    private var expansionProgress: CGFloat { model.panelExpansionProgress }
+
     // MARK: Body
 
     public var body: some View {
@@ -53,11 +58,6 @@ public struct PanelRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        // Animate the HStack's layout, not only the rail's presentation. The
-        // panel window morphs on the same token; keeping the sibling main-column
-        // position in this transaction prevents rail content from painting over
-        // it during the 604 ↔ 380 point resize.
-        .animation(model.theme.motion.expandMorph.animation(reduceMotion: reduceMotion), value: expanded)
         .background(Color.clear)
         .environment(\.ordoTheme, model.theme)
         .environment(\.ordoPalette, palette)
@@ -81,14 +81,22 @@ public struct PanelRootView: View {
     private var rail: some View {
         let dividerEdge: Alignment = model.theme.railOnTrailing ? .leading : .trailing
         return RailView(model: model)
-            .offset(x: expanded ? 0 : -10)
-            .frame(width: expanded ? model.theme.metrics.railWidth : 0, alignment: .leading)
+            .offset(x: -10 * (1 - expansionProgress))
+            .frame(width: model.theme.metrics.railWidth * expansionProgress, alignment: .leading)
+            // Mock: rail geometry follows the 620 ms drawer curve, while its
+            // visibility uses the shorter 380 ms CSS `ease` transition.
             .opacity(expanded ? 1 : 0)
+            .animation(
+                reduceMotion
+                    ? nil
+                    : .timingCurve(0.25, 0.10, 0.25, 1.0, duration: 0.380),
+                value: expanded
+            )
             .clipped()
             .overlay(alignment: dividerEdge) {
-                if expanded {
-                    Rectangle().fill(palette.divider).frame(width: palette.hairlineWidth)
-                }
+                Rectangle()
+                    .fill(palette.divider)
+                    .frame(width: palette.hairlineWidth)
             }
     }
 
@@ -112,8 +120,10 @@ public struct PanelRootView: View {
             FooterView(model: model)
         }
         .padding(mainColumnInsets)
-        .frame(width: model.theme.mainColumnFlexes ? nil : model.theme.metrics.mainColumnWidth)
-        .frame(maxWidth: model.theme.mainColumnFlexes ? .infinity : nil)
+        // Zen's flexible main column shares the exact shell-driven fraction with
+        // the rail, so its footer and other full-width controls never animate
+        // independently of the window during an expand/collapse reversal.
+        .frame(width: resolvedMainColumnWidth)
         .overlay(alignment: .bottom) { undoToast }
         .overlay { settingsOverlay }
         .overlay { arcadeFX }
@@ -123,6 +133,16 @@ public struct PanelRootView: View {
         let insets = model.theme.layout.mainColumnInsets
         return EdgeInsets(top: insets.top, leading: insets.leading,
                           bottom: insets.bottom, trailing: insets.trailing)
+    }
+
+    private var resolvedMainColumnWidth: CGFloat {
+        guard model.theme.mainColumnFlexes else {
+            return model.theme.metrics.mainColumnWidth
+        }
+        let metrics = model.theme.metrics
+        let compactWidth = metrics.panelCompactSize.width
+        let expandedWidth = metrics.panelExpandedSize.width - metrics.railWidth
+        return compactWidth + (expandedWidth - compactWidth) * expansionProgress
     }
 
     private var headerAccessoryInsets: EdgeInsets {
@@ -223,6 +243,8 @@ public struct PanelRootView: View {
     private func toggleExpand() {
         let next = !model.settings.panelExpanded
         model.settings.panelExpanded = next
+        // The chrome bridge defers and coalesces frame work after this SwiftUI
+        // state change; all expand affordances use that same sequencing.
         chrome.setExpanded(next)
     }
 }

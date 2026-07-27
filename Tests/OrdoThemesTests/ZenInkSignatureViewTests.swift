@@ -87,8 +87,71 @@ final class ZenInkSignatureViewTests: XCTestCase {
                        38, accuracy: 0.01)
         XCTAssertEqual(fittingSize(AnyView(OrdoZenEnso(theme: theme, done: 2, total: 5, compact: false))).width,
                        132, accuracy: 0.01, "rail/all-clear ensō is specified as 132pt")
-        XCTAssertEqual(fittingSize(AnyView(OrdoZenHanko(theme: theme))).width, 27, accuracy: 0.01)
-        XCTAssertEqual(fittingSize(AnyView(OrdoZenHanko(theme: theme))).height, 27, accuracy: 0.01)
+        let openHanko = fittingSize(AnyView(OrdoZenHanko(theme: theme, done: false)))
+        let doneHanko = fittingSize(AnyView(OrdoZenHanko(theme: theme, done: true)))
+        XCTAssertEqual(openHanko.width, 27, accuracy: 0.01)
+        XCTAssertEqual(openHanko.height, 27, accuracy: 0.01)
+        XCTAssertEqual(doneHanko.width, openHanko.width, accuracy: 0.01,
+                       "the permanently-mounted seal slot must not change width")
+        XCTAssertEqual(doneHanko.height, openHanko.height, accuracy: 0.01,
+                       "the permanently-mounted seal slot must not change height")
+    }
+
+    func testInitiallyDoneHankoIsVisibleAndAlreadySettled() {
+        // Give the hosted view one appearance cycle. An initially-completed
+        // hanko must remain at its 27pt settled stamp scale, rather than replay
+        // the larger first keyframe after it has been inserted into a fixture.
+        let canvas = CGSize(width: 80, height: 80)
+        let immediate = render(
+            AnyView(OrdoZenHanko(theme: theme, done: true)),
+            size: canvas,
+            scheme: .light,
+            reduceMotion: false
+        )
+        let image = render(
+            AnyView(OrdoZenHanko(theme: theme, done: true)),
+            size: canvas,
+            scheme: .light,
+            reduceMotion: false,
+            afterAppearanceFor: 0.025
+        )
+        guard let initialBounds = alphaBounds(in: immediate), let bounds = alphaBounds(in: image) else {
+            return XCTFail("an initially completed hanko must be visible")
+        }
+        XCTAssertGreaterThan(alphaPixelCount(image), 0)
+        XCTAssertEqual(bounds, initialBounds,
+                       "an initial done state should stay settled instead of replaying a stamp keyframe")
+    }
+
+    // MARK: - Completion geometry
+
+    func testShortDoneTitleStrikeUsesTextBoundsRatherThanWideHost() {
+        let host = CGSize(width: 360, height: 44)
+        let image = render(theme.taskTitle("Brief task", done: true), size: host, scheme: .light, reduceMotion: true)
+
+        guard let bounds = alphaBounds(in: image) else {
+            return XCTFail("a completed title should render text and its strike")
+        }
+        XCTAssertGreaterThan(alphaPixelCount(image), 0)
+        XCTAssertLessThan(bounds.width, host.width * 0.55,
+                          "a short title's strike must not span the flexible row column")
+    }
+
+    func testConstrainedMultilineTitleWrapsAndRendersWithinHost() {
+        let host = CGSize(width: 132, height: 96)
+        let image = render(
+            theme.taskTitle("Review the visual parity notes before the next quiet release", done: true),
+            size: host,
+            scheme: .light,
+            reduceMotion: true
+        )
+
+        guard let bounds = alphaBounds(in: image) else {
+            return XCTFail("a constrained multiline title should still render")
+        }
+        XCTAssertGreaterThan(bounds.height, 36, "title should wrap to multiple lines under the host constraint")
+        XCTAssertLessThanOrEqual(bounds.maxX, CGFloat(image.pixelsWide))
+        XCTAssertLessThanOrEqual(bounds.maxY, CGFloat(image.pixelsHigh))
     }
 
     // MARK: - Motion accessibility
@@ -97,6 +160,7 @@ final class ZenInkSignatureViewTests: XCTestCase {
         let builders: [(String, AnyView, CGSize)] = [
             ("checkbox", theme.checkbox(done: true, hover: false, pressed: false), CGSize(width: 24, height: 24)),
             ("done title", theme.taskTitle("Settled title", done: true), CGSize(width: 260, height: 36)),
+            ("hanko", AnyView(OrdoZenHanko(theme: theme, done: true)), CGSize(width: 27, height: 27)),
             ("compact ring", theme.progressCompact(done: 3, total: 9), CGSize(width: 38, height: 38)),
             ("full ring", theme.progressRing(done: 3, total: 9), CGSize(width: 132, height: 132)),
             ("all clear", theme.allClearedState(onPeek: {}), CGSize(width: 340, height: 300)),
@@ -135,7 +199,13 @@ final class ZenInkSignatureViewTests: XCTestCase {
 
     // MARK: - Rendering helpers
 
-    private func render(_ view: AnyView, size: CGSize, scheme: ColorScheme, reduceMotion: Bool) -> NSBitmapImageRep {
+    private func render(
+        _ view: AnyView,
+        size: CGSize,
+        scheme: ColorScheme,
+        reduceMotion: Bool,
+        afterAppearanceFor delay: TimeInterval = 0
+    ) -> NSBitmapImageRep {
         let root = view
             .frame(width: size.width, height: size.height)
             .environment(\.colorScheme, scheme)
@@ -145,6 +215,10 @@ final class ZenInkSignatureViewTests: XCTestCase {
         let hosting = NSHostingView(rootView: root)
         hosting.frame = NSRect(origin: .zero, size: size)
         hosting.layoutSubtreeIfNeeded()
+        if delay > 0 {
+            RunLoop.main.run(until: Date().addingTimeInterval(delay))
+            hosting.layoutSubtreeIfNeeded()
+        }
 
         guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
             XCTFail("NSHostingView did not create a bitmap image representation")

@@ -24,6 +24,9 @@ struct VisualFixture {
         case settings
         case undo
         case completionMid = "completion-mid"
+        case uncheckMid = "uncheck-mid"
+        case pathCompletionMid = "path-completion-mid"
+        case pathUncheckMid = "path-uncheck-mid"
         /// Explicit reset is an alias for the clean first-run fixture.
         case reset
 
@@ -154,10 +157,17 @@ struct VisualFixture {
         switch scene {
         case .firstRun, .reset:
             return nil
-        case .populated, .settings, .undo, .completionMid:
+        case .populated, .settings, .undo, .completionMid, .pathCompletionMid:
             return StoreState(lastProcessedDay: day, tasks: populatedTasks(created: created, day: day, includesCompleted: false))
-        case .oneCompleted:
+        case .oneCompleted, .uncheckMid:
             return StoreState(lastProcessedDay: day, tasks: populatedTasks(created: created, day: day, includesCompleted: true))
+        case .pathUncheckMid:
+            var tasks = populatedTasks(created: created, day: day, includesCompleted: false)
+            if let index = tasks.firstIndex(where: { $0.list == .longterm }) {
+                tasks[index].done = true
+                tasks[index].completedAt = clock.now
+            }
+            return StoreState(lastProcessedDay: day, tasks: tasks)
         case .allCleared, .peeked:
             return StoreState(lastProcessedDay: day, tasks: [
                 task(1, "Review the visual parity notes", list: .today, done: true, created: created, day: day, order: 1),

@@ -30,6 +30,16 @@ final class PanelController: NSObject, PanelChrome {
     private var exitAnimationGeneration = 0
     /// Invalidates an entrance blur cleanup once an exit begins.
     private var entranceBlurGeneration = 0
+    /// Frame changes made through `NSWindow.animator()` are composited by AppKit
+    /// from a cached window snapshot. That is normally desirable, but it leaves
+    /// an expanded SwiftUI surface visible over the compact hierarchy during a
+    /// panel collapse. Drive real, non-animated window frames instead.
+    private var morphTimer: Timer?
+    private var morphGeneration = 0
+    /// Both the header button and ⌘E change SwiftUI state before calling the
+    /// chrome bridge. Keep one next-turn request here so every entry point lets
+    /// that state commit first, and a rapid reversal retains only its last target.
+    private var morphRequestGeneration = 0
 
     /// The status-item button we anchored to (for re-positioning on expand).
     private weak var anchorButton: NSStatusBarButton?
@@ -91,8 +101,26 @@ final class PanelController: NSObject, PanelChrome {
         hide(animated: true)
     }
 
-    func setExpanded(_ expanded: Bool) {
-        morphFrame(expanded: expanded, animated: true)
+    func setExpanded(_ _: Bool) {
+        // Do not defer a reduced-motion update: it must invalidate an in-flight
+        // timer and put the window and SwiftUI hierarchy at the exact endpoint
+        // in this same main-actor turn.
+        if resolvedReduceMotion {
+            cancelPendingMorph()
+            morphFrame(expanded: controller.settings.panelExpanded, animated: false)
+            return
+        }
+        // Freeze a prior tween at its last shared frame/progress immediately.
+        // The coalesced request below then restarts from that exact live state.
+        cancelMorphAnimation()
+        morphRequestGeneration &+= 1
+        let generation = morphRequestGeneration
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.morphRequestGeneration == generation else { return }
+            // Read the single source of truth at execution time. A second toggle
+            // in this run-loop turn supersedes the captured request entirely.
+            self.morphFrame(expanded: self.controller.settings.panelExpanded, animated: true)
+        }
     }
 
     func notifyInteraction(active: Bool) {
@@ -117,6 +145,9 @@ final class PanelController: NSObject, PanelChrome {
 
     func show(from button: NSStatusBarButton?) {
         guard !isVisible else { return }
+        cancelPendingMorph()
+        cancelMorphAnimation()
+        setExpansionProgress(for: controller.settings.panelExpanded)
         // A second status-item click can reopen while the previous exit animation
         // is still in flight. Its completion must not order this new presentation out.
         exitAnimationGeneration += 1
@@ -146,6 +177,9 @@ final class PanelController: NSObject, PanelChrome {
 
     func hide(animated: Bool) {
         guard isVisible else { return }
+        cancelPendingMorph()
+        cancelMorphAnimation()
+        setExpansionProgress(for: controller.settings.panelExpanded)
         isVisible = false
         removeMonitors()
 
@@ -350,7 +384,10 @@ final class PanelController: NSObject, PanelChrome {
     // MARK: Frame morph (expand / collapse)
 
     private func morphFrame(expanded: Bool, animated: Bool) {
-        guard isVisible else { return }
+        guard isVisible else {
+            setExpansionProgress(for: expanded)
+            return
+        }
         let panelSize = expanded ? controller.theme.metrics.panelExpandedSize
                                  : controller.theme.metrics.panelCompactSize
         let newWinSize = PanelController.windowSize(for: panelSize)
@@ -362,19 +399,158 @@ final class PanelController: NSObject, PanelChrome {
         var newFrame = NSRect(x: newOriginX, y: newOriginY, width: newWinSize.width, height: newWinSize.height)
         newFrame = clampToScreen(newFrame, panelSize: panelSize)
 
-        let reduce = Self.systemReduceMotion
+        let reduce = resolvedReduceMotion
         let motion = controller.theme.motion.expandMorph
+        let targetProgress: CGFloat = expanded ? 1 : 0
 
-        if animated && !reduce {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = motion.duration
-                ctx.timingFunction = Self.timingFunction(for: motion.curve)
-                ctx.allowsImplicitAnimation = true
-                window.animator().setFrame(newFrame, display: true)
-            }
-        } else {
-            window.setFrame(newFrame, display: true)
+        cancelMorphAnimation()
+        guard animated, !reduce, motion.duration > 0, window.frame != newFrame else {
+            setExpansionProgress(targetProgress)
+            setWindowFrame(newFrame, display: true)
+            return
         }
+
+        // The current frame is the start frame, rather than a remembered endpoint.
+        // This makes an expand/collapse reversal continuous, even midway through the
+        // previous transition. `setFrame(..., animate: false)` avoids AppKit's
+        // snapshot compositor entirely, so SwiftUI is always drawing the one live
+        // hierarchy for the current frame.
+        let startFrame = window.frame
+        let startProgress = expansionProgress(for: startFrame)
+        setExpansionProgress(startProgress)
+        let duration = motion.duration
+        let startedAt = Date()
+        morphGeneration &+= 1
+        let generation = morphGeneration
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            // This timer is installed only on `RunLoop.main` below. Foundation's
+            // callback is nevertheless Sendable, so re-enter the known main actor
+            // explicitly before touching AppKit or controller state.
+            MainActor.assumeIsolated {
+                guard let self, self.isVisible, self.morphGeneration == generation else {
+                    timer.invalidate()
+                    return
+                }
+
+                // Accessibility can change while the panel is visible. Finish
+                // both surfaces at the semantic endpoint rather than leaving a
+                // timer alive with a now-disallowed in-between state.
+                guard !self.resolvedReduceMotion else {
+                    self.setExpansionProgress(targetProgress)
+                    self.setWindowFrame(newFrame, display: true)
+                    timer.invalidate()
+                    if self.morphGeneration == generation {
+                        self.morphTimer = nil
+                    }
+                    return
+                }
+
+                let linearProgress = min(max(Date().timeIntervalSince(startedAt) / duration, 0), 1)
+                let easedProgress = Self.easedProgress(linearProgress, curve: motion.curve)
+                let progress = startProgress + (targetProgress - startProgress) * easedProgress
+                self.setExpansionProgress(linearProgress >= 1 ? targetProgress : progress)
+                self.setWindowFrame(Self.interpolate(from: startFrame, to: newFrame, progress: easedProgress),
+                                    display: true)
+
+                guard linearProgress >= 1 else { return }
+                timer.invalidate()
+                if self.morphGeneration == generation {
+                    self.morphTimer = nil
+                }
+            }
+        }
+        morphTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func cancelMorphAnimation() {
+        morphGeneration &+= 1
+        morphTimer?.invalidate()
+        morphTimer = nil
+    }
+
+    private func cancelPendingMorph() {
+        morphRequestGeneration &+= 1
+    }
+
+    /// The model owns observable layout state, while the controller owns the
+    /// timing. This class is main-actor isolated, so this never crosses threads.
+    private func setExpansionProgress(_ progress: CGFloat) {
+        controller.model.setPanelExpansionProgress(progress)
+    }
+
+    private func setExpansionProgress(for expanded: Bool) {
+        setExpansionProgress(expanded ? 1 : 0)
+    }
+
+    /// Converts the current live frame to the matching semantic fraction. This
+    /// is the only valid start state for a rapid reversal because the frame may
+    /// be partway through an earlier target's interpolation.
+    private func expansionProgress(for frame: NSRect) -> CGFloat {
+        let metrics = controller.theme.metrics
+        let compactWidth = Self.windowSize(for: metrics.panelCompactSize).width
+        let expandedWidth = Self.windowSize(for: metrics.panelExpandedSize).width
+        let span = expandedWidth - compactWidth
+        guard span != 0 else { return controller.settings.panelExpanded ? 1 : 0 }
+        return min(max((frame.width - compactWidth) / span, 0), 1)
+    }
+
+    /// Explicitly passing `animate: false` is important: the two-argument
+    /// overload may still participate in an AppKit animation context.
+    private func setWindowFrame(_ frame: NSRect, display: Bool) {
+        window.setFrame(frame, display: display, animate: false)
+    }
+
+    private static func interpolate(from: NSRect, to: NSRect, progress: CGFloat) -> NSRect {
+        let p = min(max(progress, 0), 1)
+        return NSRect(
+            x: from.origin.x + (to.origin.x - from.origin.x) * p,
+            y: from.origin.y + (to.origin.y - from.origin.y) * p,
+            width: from.size.width + (to.size.width - from.size.width) * p,
+            height: from.size.height + (to.size.height - from.size.height) * p
+        )
+    }
+
+    /// Converts elapsed time to the matching cubic-bezier progress. Core
+    /// Animation accepts the curve directly; for manual frames we solve its x
+    /// component first so the motion retains the theme's authored timing.
+    private static func easedProgress(_ progress: Double, curve: MotionCurve) -> CGFloat {
+        let input = min(max(progress, 0), 1)
+        guard let (x1, y1, x2, y2) = curve.controlPoints else {
+            if case let .steps(count) = curve, count > 0, input < 1 {
+                return CGFloat(floor(input * Double(count)) / Double(count))
+            }
+            return CGFloat(input)
+        }
+
+        func cubic(_ t: Double, _ p1: Double, _ p2: Double) -> Double {
+            let inverse = 1 - t
+            return 3 * inverse * inverse * t * p1 + 3 * inverse * t * t * p2 + t * t * t
+        }
+        func derivative(_ t: Double, _ p1: Double, _ p2: Double) -> Double {
+            let inverse = 1 - t
+            return 3 * inverse * inverse * p1 + 6 * inverse * t * (p2 - p1) + 3 * t * t * (1 - p2)
+        }
+
+        // Newton's method converges rapidly for normal curves; the bisection
+        // fallback also handles the drawer curve's x2 == 0 safely.
+        var t = input
+        for _ in 0..<8 {
+            let slope = derivative(t, x1, x2)
+            guard abs(slope) > 0.000_001 else { break }
+            let next = t - (cubic(t, x1, x2) - input) / slope
+            guard (0...1).contains(next) else { break }
+            t = next
+        }
+        var lower = 0.0
+        var upper = 1.0
+        for _ in 0..<12 {
+            let x = cubic(t, x1, x2)
+            if abs(x - input) < 0.000_001 { break }
+            if x < input { lower = t } else { upper = t }
+            t = (lower + upper) / 2
+        }
+        return CGFloat(cubic(t, y1, y2))
     }
 
     // MARK: Positioning
@@ -499,6 +675,9 @@ final class PanelController: NSObject, PanelChrome {
     }
 
     func themeChanged() {
+        cancelPendingMorph()
+        cancelMorphAnimation()
+        setExpansionProgress(for: controller.settings.panelExpanded)
         // The palette may switch paper ↔ vibrancy/cabinet while the panel is on
         // screen. Drop the transient filter before the persistent surface changes.
         clearPanelBlur()

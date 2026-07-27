@@ -36,7 +36,16 @@ final class ZenInkIntegrationTests: XCTestCase {
 
         XCTAssertEqual(zen.composerPlaceholder(isToday: true), "書く… write the next thing")
         XCTAssertEqual(zen.composerPlaceholder(isToday: false), "書く… write the next thing")
-        XCTAssertNil(zen.rowTrailingAccessory(done: false, age: 10, triage: true, index: 2))
+        let openRowAccessory = tryUnwrap(
+            zen.rowTrailingAccessory(done: false, age: 10, triage: true, index: 2),
+            "Zen open row accessory"
+        )
+        let completedRowAccessory = tryUnwrap(
+            zen.rowTrailingAccessory(done: true, age: 10, triage: true, index: 2),
+            "Zen completed row accessory"
+        )
+        XCTAssertEqual(fittingSize(openRowAccessory), CGSize(width: 27, height: 27))
+        XCTAssertEqual(fittingSize(completedRowAccessory), CGSize(width: 27, height: 27))
 
         for scheme in [ColorScheme.light, .dark] {
             for reduceMotion in [false, true] {
@@ -45,7 +54,7 @@ final class ZenInkIntegrationTests: XCTestCase {
                     ("brush divider", tryUnwrap(zen.headerAccessory(), "Zen header accessory"), CGSize(width: 320, height: 12)),
                     ("compact header progress", tryUnwrap(zen.headerTrailingAccessory(done: 2, total: 5, expanded: false), "Zen compact header accessory"), CGSize(width: 38, height: 38)),
                     ("tabs", tryUnwrap(zen.tabBarContent(tab: .today, remaining: { list in list == .today ? 3 : 8 }, onSelect: { _ in }), "Zen tab bar"), CGSize(width: 320, height: 54)),
-                    ("completed-row seal", tryUnwrap(zen.rowTrailingAccessory(done: true, age: 10, triage: true, index: 2), "Zen completed row accessory"), CGSize(width: 27, height: 27)),
+                    ("completed-row seal", completedRowAccessory, CGSize(width: 27, height: 27)),
                     ("rail", tryUnwrap(zen.railContent(done: 2, total: 5, remaining: 3, score: 999, best: 999, streak: 9), "Zen rail"), CGSize(width: 194, height: 500)),
                 ]
 
@@ -114,6 +123,12 @@ final class ZenInkIntegrationTests: XCTestCase {
         }
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
         return bitmap
+    }
+
+    private func fittingSize(_ view: AnyView) -> CGSize {
+        let hosting = NSHostingView(rootView: view)
+        hosting.layoutSubtreeIfNeeded()
+        return hosting.fittingSize
     }
 
     private func alphaPixelCount(_ bitmap: NSBitmapImageRep) -> Int {

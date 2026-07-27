@@ -54,6 +54,67 @@ final class AppModelTests: UIModelTestCase {
         XCTAssertEqual(model.doneToday.count, 0)
     }
 
+    func testZenPathCompletionUpdatesFlatRowsInStoreOrderImmediately() {
+        let store = makeStore()
+        let model = makeZenModel(store: store)
+        model.selectTab(.longterm)
+        model.composerText = "First"; model.submitComposer()
+        model.composerText = "Second"; model.submitComposer()
+        model.composerText = "Third"; model.submitComposer()
+
+        let canonicalIDs = store.tasks(in: .longterm).map(\.id)
+        let targetID = canonicalIDs[1]
+
+        model.toggle(targetID)
+
+        XCTAssertEqual(model.longtermRemaining, 2)
+        XCTAssertEqual(model.allRows.map(\.id), canonicalIDs)
+        XCTAssertEqual(model.allRows.firstIndex(where: { $0.id == targetID }), 1)
+        XCTAssertTrue(model.allRows[1].done)
+    }
+
+    func testZenPathUncheckUpdatesFlatRowsImmediately() {
+        let store = makeStore()
+        let model = makeZenModel(store: store)
+        model.selectTab(.longterm)
+        model.composerText = "First"; model.submitComposer()
+        model.composerText = "Second"; model.submitComposer()
+        model.composerText = "Third"; model.submitComposer()
+
+        let canonicalIDs = store.tasks(in: .longterm).map(\.id)
+        let targetID = canonicalIDs[1]
+        model.toggle(targetID)
+
+        model.toggle(targetID)
+
+        XCTAssertEqual(model.longtermRemaining, 3)
+        XCTAssertEqual(model.allRows.map(\.id), canonicalIDs)
+        XCTAssertEqual(model.allRows.firstIndex(where: { $0.id == targetID }), 1)
+        XCTAssertFalse(model.allRows[1].done)
+    }
+
+    func testZenTodayFlatRowsKeepCanonicalOrderAcrossCompleteAndUncheck() {
+        let store = makeStore()
+        let model = makeZenModel(store: store)
+        model.composerText = "First"; model.submitComposer()
+        model.composerText = "Second"; model.submitComposer()
+        model.composerText = "Third"; model.submitComposer()
+
+        let canonicalIDs = store.tasks(in: .today).map(\.id)
+        let firstID = canonicalIDs[0]
+        let thirdID = canonicalIDs[2]
+        model.toggle(firstID)
+        model.toggle(thirdID)
+
+        XCTAssertEqual(model.allRows.map(\.id), store.tasks(in: .today).map(\.id))
+        XCTAssertEqual(model.allRows.map(\.done), [true, false, true])
+
+        model.toggle(firstID)
+
+        XCTAssertEqual(model.allRows.map(\.id), store.tasks(in: .today).map(\.id))
+        XCTAssertEqual(model.allRows.map(\.done), [false, false, true])
+    }
+
     func testDeleteAndUndoReflectedInRows() {
         let model = makeModel(store: makeStore())
         model.composerText = "Delete me"
@@ -155,5 +216,14 @@ final class AppModelTests: UIModelTestCase {
         XCTAssertFalse(model.clearedPeek)
         scheduler.fireAll()
         XCTAssertFalse(model.isAllClearedToday)
+    }
+
+    private func makeZenModel(store: TaskStore) -> AppModel {
+        AppModel(store: store,
+                 clock: clock,
+                 theme: ZenInkTheme(),
+                 settings: settings,
+                 sounds: sounds,
+                 scheduler: scheduler)
     }
 }

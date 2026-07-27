@@ -56,8 +56,15 @@ public final class AppModel {
     public var doneRows: [OrdoTask] { tab == .today ? doneToday : doneLongterm }
 
     /// All active-tab tasks in stored order, for themes where
-    /// `showsDoneSection == false` (Arcade), which render one flat list.
-    public var allRows: [OrdoTask] { store.tasks(in: tab) }
+    /// `showsDoneSection == false`, which render one flat list. Row values come
+    /// from the observed display snapshots so a flat list is invalidated together
+    /// with its remaining count; the store supplies only the canonical ID order.
+    public var allRows: [OrdoTask] {
+        let currentRows = Dictionary(
+            uniqueKeysWithValues: (openRows + doneRows).map { ($0.id, $0) }
+        )
+        return store.tasks(in: tab).compactMap { currentRows[$0.id] }
+    }
 
     // MARK: View state
 
@@ -77,12 +84,25 @@ public final class AppModel {
     /// Reduce-Motion mirror, pushed from the SwiftUI environment by the root view.
     /// Drives whether reflow delays are honored (mockup skips them under reduced).
     public var reduceMotion = false {
-        didSet { syncSystemAppearance() }
+        didSet {
+            syncSystemAppearance()
+            // The shell owns the live frame timer. Re-submit the semantic target
+            // when this accessibility setting changes so an active morph can be
+            // ended immediately rather than waiting for its next display tick.
+            chrome?.setExpanded(settings.panelExpanded)
+        }
     }
 
     /// Whether the system is currently in dark mode (pushed from the environment /
     /// shell). Only consulted when `settings.appearance == .system`.
     public var systemIsDark = false
+
+    /// The live panel expansion fraction. `panelExpanded` remains the persisted
+    /// semantic target, while the AppKit shell advances this value in lockstep
+    /// with its real window-frame tween. Keeping the intermediate state here
+    /// lets SwiftUI lay out one hierarchy for the exact native-window geometry
+    /// instead of starting a second implicit endpoint animation.
+    public private(set) var panelExpansionProgress: CGFloat
 
     // MARK: Composer
 
@@ -143,8 +163,15 @@ public final class AppModel {
         self.sounds = sounds
         self.scheduler = scheduler
         self.undoWindow = undoWindow
+        self.panelExpansionProgress = settings.panelExpanded ? 1 : 0
         self.sounds.isEnabled = settings.soundEnabled
         rebuild()
+    }
+
+    /// Updates the shell-owned expansion progress. `AppModel` is main-actor
+    /// isolated, so every observed layout update stays on the UI thread.
+    public func setPanelExpansionProgress(_ progress: CGFloat) {
+        panelExpansionProgress = min(max(progress, 0), 1)
     }
 
     // MARK: Lifecycle (called by the shell)
@@ -585,10 +612,15 @@ public final class AppModel {
     func rebuild() {
         let today = store.tasks(in: .today)
         let longterm = store.tasks(in: .longterm)
-        openToday = today.filter { !$0.done }
-        doneToday = today.filter { $0.done }
-        openLongterm = longterm.filter { !$0.done }
-        doneLongterm = longterm.filter { $0.done }
+        let updatedOpenToday = today.filter { !$0.done }
+        let updatedDoneToday = today.filter { $0.done }
+        let updatedOpenLongterm = longterm.filter { !$0.done }
+        let updatedDoneLongterm = longterm.filter { $0.done }
+
+        openToday = updatedOpenToday
+        doneToday = updatedDoneToday
+        openLongterm = updatedOpenLongterm
+        doneLongterm = updatedDoneLongterm
         arcadeBest = max(arcadeBest, arcadeScore)
         wasAllCleared = isAllClearedToday
     }

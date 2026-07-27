@@ -36,9 +36,7 @@ struct HeaderView: View {
                                accessibilityLabel: model.settings.panelExpanded
                                 ? "Collapse planning view" : "Expand planning view") {
                         ExpandGlyphIcon()
-                            .rotationEffect(.degrees(model.settings.panelExpanded ? 180 : 0))
-                            .animation(theme.motion.expandMorph.animation(reduceMotion: reduceMotion),
-                                       value: model.settings.panelExpanded)
+                            .rotationEffect(.degrees(180 * model.panelExpansionProgress))
                     }
                 }
             }
@@ -79,6 +77,8 @@ struct HeaderView: View {
     private func toggleExpand() {
         let next = !model.settings.panelExpanded
         model.settings.panelExpanded = next
+        // The chrome bridge schedules one coalesced post-layout frame morph, so
+        // this button and ⌘E cannot start competing AppKit transitions.
         chrome.setExpanded(next)
     }
 }

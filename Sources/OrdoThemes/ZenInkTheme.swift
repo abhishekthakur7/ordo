@@ -240,7 +240,7 @@ extension ZenInkTheme {
             completeReflowDelay: 0, uncheckReflowDelay: 0
         ),
         rowEntranceTransform: RowEntranceTransform(translateY: -10, scale: 1, duration: 0.500, blur: 6),
-        panelEnterBlur: 7, panelExitBlur: 7 // .panel :204, :217; paper only in renderer
+        panelEnterBlur: 0, panelExitBlur: 0 // Native panel entrance/exit stay visibly crisp.
     )
 }
 

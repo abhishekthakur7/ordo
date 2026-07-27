@@ -67,9 +67,17 @@ private struct ZenVerticalText: View {
 struct ZenHeaderLeading: View {
     let theme: ZenInkTheme
 
+    // CSS `.head-id` geometry: baseline alignment makes the 23pt wordmark begin
+    // 14pt below the container top. The constrained `writing-mode: vertical-rl`
+    // subtitle wraps into two right-to-left columns in the mock; SwiftUI needs
+    // that composition and its optical top inset expressed explicitly.
+    private static let verticalLabelHeight: CGFloat = 34
+    private static let wordmarkTopInset: CGFloat = 14
+    private static let verticalLabelTopInset: CGFloat = 5
+
     var body: some View {
         Themed(theme: theme) { palette, _ in
-            HStack(alignment: .firstTextBaseline, spacing: theme.layout.headerTextSpacing) {
+            HStack(alignment: .top, spacing: theme.layout.headerTextSpacing) {
                 HStack(spacing: 1) {
                     Text("序")
                         .typeToken(ZenInkTheme.wordmarkType)
@@ -79,15 +87,25 @@ struct ZenHeaderLeading: View {
                         .foregroundStyle(palette.ink)
                 }
                 .fixedSize()
+                .padding(.top, Self.wordmarkTopInset)
 
-                ZenVerticalText(
-                    text: "せいひつ",
-                    token: ZenInkTheme.headSubType,
-                    color: palette.inkFaint,
-                    spacing: -0.67
-                )
-                .frame(height: 34, alignment: .top)
-                .padding(.top, 1)
+                HStack(alignment: .top, spacing: 4) {
+                    // CSS vertical-rl fills the right column first.
+                    ZenVerticalText(
+                        text: "ひつ",
+                        token: ZenInkTheme.headSubType,
+                        color: palette.inkFaint,
+                        spacing: -0.67
+                    )
+                    ZenVerticalText(
+                        text: "せい",
+                        token: ZenInkTheme.headSubType,
+                        color: palette.inkFaint,
+                        spacing: -0.67
+                    )
+                }
+                .frame(height: Self.verticalLabelHeight, alignment: .top)
+                .padding(.top, Self.verticalLabelTopInset)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("序 Ordo, せいひつ")
@@ -121,10 +139,16 @@ struct ZenHeaderTrailing: View {
                     )
                     .animation(reduceMotion ? nil : theme.motion.ring.standard, value: done)
                     .animation(reduceMotion ? nil : theme.motion.ring.standard, value: total)
-                Text("\(remaining)")
-                    .typeToken(ZenInkTheme.headCountType)
-                    .foregroundStyle(palette.ink)
-                    .contentTransition(.numericText())
+                // The mock swaps the glyph: old value fades upward, changes at
+                // 200 ms, then the new value settles. A numeric digit morph is
+                // noticeably busier during task completion.
+                ZenRemainingCount(
+                    theme: theme,
+                    palette: palette,
+                    remaining: remaining,
+                    reduceMotion: reduceMotion,
+                    typeToken: ZenInkTheme.headCountType
+                )
             }
             .frame(width: theme.metrics.compactRingDiameter, height: theme.metrics.compactRingDiameter)
             .frame(width: expanded ? 0 : theme.metrics.compactRingDiameter,
@@ -260,8 +284,8 @@ struct ZenTabBar: View {
 
 // MARK: - Row trailing accessory
 
-/// A completed Zen row ends in a 27-point vermilion seal. Open rows return
-/// `nil`, allowing the shared row to retain its normal no-reservation layout.
+/// Every Zen row reserves a 27-point vermilion seal slot. Its inner treatment
+/// communicates completion while the stable outer geometry keeps rows aligned.
 struct ZenRowTrailing: View {
     let theme: ZenInkTheme
     let done: Bool
@@ -396,8 +420,7 @@ extension ZenInkTheme {
     }
 
     public func rowTrailingAccessory(done: Bool, age: Int, triage: Bool, index: Int?) -> AnyView? {
-        guard done else { return nil }
-        return AnyView(ZenRowTrailing(theme: self, done: done))
+        AnyView(ZenRowTrailing(theme: self, done: done))
     }
 
     public func railContent(

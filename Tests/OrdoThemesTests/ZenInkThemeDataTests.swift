@@ -227,7 +227,7 @@ final class ZenInkThemeDataTests: XCTestCase {
         let m = theme.motion
         let expected: [(MotionToken, Double, MotionCurve)] = [(m.panelEnter, 0.520, .easeOut), (m.panelExit, 0.280, .easeOut), (m.expandMorph, 0.620, .easeDrawer), (m.tabThumb, 0.420, .easeDrawer), (m.appearanceThumb, 0.380, .easeDrawer), (m.soundKnob, 0.240, .easeOut), (m.checkboxFill, 0.420, .easeOut), (m.tickDraw, 0.360, .easeOut), (m.strikethrough, 0.560, .easeOut), (m.titleColorFade, 0.460, .easeOut), (m.rowEntrance, 0.500, .easeOut), (m.flipMove, 0.500, .easeOut), (m.ring, 0.950, .easeIO), (m.appearanceCrossfade, 0.600, .easeOut), (m.hoverFade, 0.240, .easeOut), (m.pressEcho, 0.160, .easeOut), (m.counterFade, 0.220, .easeOut)]
         for (token, duration, curve) in expected { XCTAssertEqual(token.duration, duration, accuracy: 0.0001); XCTAssertEqual(token.curve, curve) }
-        XCTAssertEqual(m.panelEnterBlur, 7); XCTAssertEqual(m.panelExitBlur, 7)
+        XCTAssertEqual(m.panelEnterBlur, 0); XCTAssertEqual(m.panelExitBlur, 0)
         let sequence = m.checkboxSequence
         XCTAssertEqual(sequence.fillDuration, 0.420); XCTAssertEqual(sequence.fillKeyframes, [.init(scale: 0.2, fraction: 0), .init(scale: 1, fraction: 1)])
         XCTAssertEqual(sequence.tickDrawDuration, 0.360); XCTAssertEqual(sequence.tickDrawDelay, 0); XCTAssertEqual(sequence.fillFadeDuration, 0.360); XCTAssertEqual(sequence.ringFadeDuration, 0.300); XCTAssertEqual(sequence.completeReflowDelay, 0); XCTAssertEqual(sequence.uncheckReflowDelay, 0)

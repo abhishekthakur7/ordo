@@ -271,7 +271,7 @@ final class ZenInkThemeTests: XCTestCase {
         XCTAssertNotNil(theme.headerTrailingAccessory(done: 1, total: 2, expanded: false))
         XCTAssertNotNil(theme.railContent(done: 1, total: 2, remaining: 1, score: 0, best: 0, streak: 0))
         XCTAssertNotNil(theme.rowTrailingAccessory(done: true, age: 1, triage: false, index: nil))
-        XCTAssertNil(theme.rowTrailingAccessory(done: false, age: 1, triage: false, index: nil))
+        XCTAssertNotNil(theme.rowTrailingAccessory(done: false, age: 1, triage: false, index: nil))
         XCTAssertEqual(theme.composerPlaceholder(isToday: true), "書く… write the next thing")
 
         XCTAssertTrue(macTheme.showsDoneSection); XCTAssertTrue(macTheme.showsTabCountBadge)

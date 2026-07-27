@@ -413,7 +413,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         case .undo:
             model.delete(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)))
         case .completionMid:
-            model.toggle(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)))
+            toggleFixtureTaskAfterEntrance(ordinal: 1)
+        case .uncheckMid:
+            toggleFixtureTaskAfterEntrance(ordinal: 3)
+        case .pathCompletionMid, .pathUncheckMid:
+            model.selectTab(.longterm)
+            toggleFixtureTaskAfterEntrance(ordinal: 4)
         case .peeked:
             // The fixture has already seeded a fully completed Today list. Apply
             // this transient request after opening, because panelWillOpen clears
@@ -421,6 +426,20 @@ final class AppController: NSObject, NSApplicationDelegate {
             model.clearedPeek = fixture.requestsClearedPeek
         case .populated, .oneCompleted, .allCleared, .firstRun, .agedTriage, .reset:
             break
+        }
+    }
+
+    /// Motion fixtures must show a settled panel before the task mutation starts;
+    /// otherwise panel entrance and completion overlap and neither can be judged.
+    private func toggleFixtureTaskAfterEntrance(ordinal: UInt8) {
+        // WindowServer may not register the non-activating panel until roughly
+        // two seconds after process launch. `applyVisualFixture` itself begins
+        // at 0.6s, so this additional delay keeps the full mutation observable
+        // in an isolated-window recording.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
+            self?.model.toggle(UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ordinal
+            )))
         }
     }
 

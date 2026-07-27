@@ -98,7 +98,15 @@ struct OrdoZenMark: View {
                         LinearKeyframe(1.0, duration: 0.001)
                     } else {
                         LinearKeyframe(0.2, duration: 0.001)
-                        CubicKeyframe(1.0, duration: sequence.fillDuration)
+                        // Automatic cubic velocities amplify the near-zero first
+                        // keyframe into a massive intermediate scale. CSS eases
+                        // between these two authored bounds without overshooting.
+                        CubicKeyframe(
+                            1.0,
+                            duration: sequence.fillDuration,
+                            startVelocity: 0,
+                            endVelocity: 0
+                        )
                     }
                 }
             }
@@ -127,7 +135,9 @@ struct OrdoZenTaskTitle: View {
                 // both ink color and strike state together when motion is off.
                 .animation(reduceMotion ? nil : theme.motion.titleColorFade.standard, value: done)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // This overlay must see the Text's own rendered bounds. Applying
+                // the flexible row-column frame first made a short title's strike
+                // span all of the remaining row width.
                 .overlay(alignment: .leading) {
                     GeometryReader { geometry in
                         BrushStrokeShape(.strike)
@@ -144,6 +154,9 @@ struct OrdoZenTaskTitle: View {
                     }
                     .allowsHitTesting(false)
                 }
+                // Keep this expansion outside the measured Text wrapper: titles
+                // still receive their row's width proposal and can wrap normally.
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -176,27 +189,35 @@ struct OrdoZenAgeMarker: View {
 /// The mockup swaps the remaining-count glyph rather than morphing the digits:
 /// old text exits upward, the value changes at 200 ms, then the new text fades
 /// in. This stays deliberately local so a count change never restarts the ring.
-private struct ZenRemainingCount: View {
+struct ZenRemainingCount: View {
     let theme: ZenInkTheme
     let palette: Palette
     let remaining: Int
     let reduceMotion: Bool
+    let typeToken: TypeToken
 
     @State private var displayed: Int
     @State private var opacityVisible = true
     @State private var offsetVisible = true
 
-    init(theme: ZenInkTheme, palette: Palette, remaining: Int, reduceMotion: Bool) {
+    init(
+        theme: ZenInkTheme,
+        palette: Palette,
+        remaining: Int,
+        reduceMotion: Bool,
+        typeToken: TypeToken
+    ) {
         self.theme = theme
         self.palette = palette
         self.remaining = remaining
         self.reduceMotion = reduceMotion
+        self.typeToken = typeToken
         _displayed = State(initialValue: remaining)
     }
 
     var body: some View {
         Text("\(displayed)")
-            .typeToken(theme.typeScale.ringNumber)
+            .typeToken(typeToken)
             .foregroundStyle(palette.ink)
             .opacity(opacityVisible ? 1 : 0)
             .offset(y: offsetVisible ? 0 : -5)
@@ -233,13 +254,22 @@ struct OrdoZenEnso: View {
     let total: Int
     let compact: Bool
     let showsCount: Bool
+    let showsTrack: Bool
 
-    init(theme: ZenInkTheme, done: Int, total: Int, compact: Bool, showsCount: Bool = true) {
+    init(
+        theme: ZenInkTheme,
+        done: Int,
+        total: Int,
+        compact: Bool,
+        showsCount: Bool = true,
+        showsTrack: Bool = true
+    ) {
         self.theme = theme
         self.done = done
         self.total = total
         self.compact = compact
         self.showsCount = showsCount
+        self.showsTrack = showsTrack
     }
 
     private var clampedDone: Int { min(max(done, 0), max(total, 0)) }
@@ -252,8 +282,10 @@ struct OrdoZenEnso: View {
             let diameter = compact ? theme.metrics.compactRingDiameter : 132.0
             let stroke = compact ? theme.metrics.compactRingStrokeWidth : theme.metrics.ringStrokeWidth
             ZStack {
-                EnsoShape()
-                    .stroke(palette.fieldLine, style: StrokeStyle(lineWidth: stroke, lineCap: .round))
+                if showsTrack {
+                    EnsoShape()
+                        .stroke(palette.fieldLine, style: StrokeStyle(lineWidth: stroke, lineCap: .round))
+                }
                 EnsoShape(progress: fraction)
                     .stroke(palette.ink, style: StrokeStyle(lineWidth: stroke, lineCap: .round))
                     // Unlike a color fade, a reduced ring animation still visibly
@@ -266,7 +298,8 @@ struct OrdoZenEnso: View {
                             theme: theme,
                             palette: palette,
                             remaining: remaining,
-                            reduceMotion: reduceMotion
+                            reduceMotion: reduceMotion,
+                            typeToken: theme.typeScale.ringNumber
                         )
                         Text("REMAINING")
                             .typeToken(theme.typeScale.ringSub)
@@ -330,7 +363,17 @@ struct OrdoZenAllClear: View {
     var body: some View {
         Themed(theme: theme) { palette, _ in
             VStack(spacing: 0) {
-                OrdoZenEnso(theme: theme, done: 1, total: 1, compact: false, showsCount: false)
+                // The mock's all-clear mark is the completed brush path alone.
+                // Leaving the progress track mounted paints a visible hairline
+                // across the deliberate opening in the ensō.
+                OrdoZenEnso(
+                    theme: theme,
+                    done: 1,
+                    total: 1,
+                    compact: false,
+                    showsCount: false,
+                    showsTrack: false
+                )
                     .padding(.bottom, 22)
                 Text(theme.allClearTitle)
                     .typeToken(theme.typeScale.emptyTitle)
@@ -360,10 +403,11 @@ struct OrdoZenAllClear: View {
 public struct OrdoZenHanko: View {
     public let theme: ZenInkTheme
     public let done: Bool
-    /// The theme hook intentionally inserts the seal only after completion. A
-    /// local appearance trigger ensures that newly mounted view still runs the
-    /// authored stamp sequence instead of starting at its settled value.
+    /// An initially completed row is already settled. Only a live open → done
+    /// transition advances this trigger, so keeping the seal mounted as a row
+    /// slot never replays a stamp just because the view first appears.
     @State private var stampTrigger = 0
+    @State private var hasAppeared = false
 
     public init(theme: ZenInkTheme, done: Bool = true) {
         self.theme = theme
@@ -392,9 +436,27 @@ public struct OrdoZenHanko: View {
                     LinearKeyframe(StampValue(scale: 1, rotation: -5), duration: 0.001)
                 } else {
                     LinearKeyframe(StampValue(scale: 1.62, rotation: -15), duration: 0.001)
-                    CubicKeyframe(StampValue(scale: 0.88, rotation: -2), duration: 0.209)
-                    CubicKeyframe(StampValue(scale: 1.07, rotation: -6), duration: 0.0924)
-                    CubicKeyframe(StampValue(scale: 1, rotation: -5), duration: 0.1176)
+                    // Keep each segment inside its authored CSS keyframe bounds.
+                    // Inferred cubic velocities around the 1 ms setup keyframe
+                    // otherwise produce a several-hundred-point transient stamp.
+                    CubicKeyframe(
+                        StampValue(scale: 0.88, rotation: -2),
+                        duration: 0.209,
+                        startVelocity: .zero,
+                        endVelocity: .zero
+                    )
+                    CubicKeyframe(
+                        StampValue(scale: 1.07, rotation: -6),
+                        duration: 0.0924,
+                        startVelocity: .zero,
+                        endVelocity: .zero
+                    )
+                    CubicKeyframe(
+                        StampValue(scale: 1, rotation: -5),
+                        duration: 0.1176,
+                        startVelocity: .zero,
+                        endVelocity: .zero
+                    )
                 }
             }
             .frame(width: 27, height: 27)
@@ -402,9 +464,13 @@ public struct OrdoZenHanko: View {
             .accessibilityHidden(true)
         }
         .onAppear {
-            if done {
-                stampTrigger &+= 1
-            }
+            hasAppeared = true
+        }
+        .onChange(of: done) { previous, current in
+            // Appearance establishes the settled state; only a subsequent
+            // false → true change runs the authored KeyframeAnimator sequence.
+            guard hasAppeared, !previous, current else { return }
+            stampTrigger &+= 1
         }
     }
 }
