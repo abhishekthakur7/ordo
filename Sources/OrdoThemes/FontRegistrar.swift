@@ -1,14 +1,16 @@
 // FontRegistrar.swift
-// OrdoThemes — bundled font infrastructure for the "Arcade" theme.
+// OrdoThemes — bundled font infrastructure for the Arcade and Zen Ink themes.
 //
 // Bundles Press Start 2P (single static weight) and Space Grotesk (a variable
 // font, default instance is Light/300 — there is no named SemiBold/600
-// instance). Both are SIL Open Font License 1.1 (see Resources/Fonts/OFL.txt).
+// instance). Zen Ink additionally ships static Shippori Mincho and Zen Kaku
+// Gothic New faces. All bundled fonts are SIL Open Font License 1.1 (see
+// Resources/Fonts/OFL.txt).
 
 import AppKit
 import CoreText
 
-/// Registers Ordo's bundled Arcade-theme fonts with CoreText at runtime.
+/// Registers Ordo's bundled theme fonts with CoreText at runtime.
 /// Safe to call from any thread, any number of times — registration happens
 /// exactly once.
 public enum FontRegistrar {
@@ -20,9 +22,30 @@ public enum FontRegistrar {
     /// default weight 300; no discrete 600/SemiBold instance).
     public static let spaceGroteskFamily = "Space Grotesk"
 
+    /// CoreText/AppKit-resolved family name for Shippori Mincho.
+    public static let shipporiMinchoFamily = "Shippori Mincho"
+
+    /// CoreText/AppKit-resolved family name for Zen Kaku Gothic New.
+    public static let zenKakuGothicFamily = "Zen Kaku Gothic New"
+
+    // Zen Ink uses these exact PostScript face names. Do not substitute
+    // `Font.custom(family, size:).weight(...)`: CoreText does not reliably
+    // select a particular static face from a multi-weight family that way.
+    public static let shipporiMinchoRegular = "ShipporiMincho-Regular"
+    public static let shipporiMinchoSemiBold = "ShipporiMincho-SemiBold"
+    public static let shipporiMinchoBold = "ShipporiMincho-Bold"
+    public static let shipporiMinchoExtraBold = "ShipporiMincho-ExtraBold"
+    public static let zenKakuGothicNewRegular = "ZenKakuGothicNew-Regular"
+    public static let zenKakuGothicNewMedium = "ZenKakuGothicNew-Medium"
+
     /// Registers every bundled font exactly once, idempotently and thread-safely.
     public static func registerAll() {
         _ = registrationResult
+    }
+
+    /// The bundled font resources, exposed internally for registration tests.
+    static func bundledFontURLs() -> [URL] {
+        discoverFontURLs()
     }
 
     /// Backing storage for the one-time registration (a `static let`

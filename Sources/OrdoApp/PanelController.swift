@@ -3,6 +3,7 @@
 // Animates entrance/exit + expand-morph, closes on click-outside; hidden ≠ deallocated.
 
 import AppKit
+import CoreImage
 import SwiftUI
 import OrdoCore
 import OrdoThemes
@@ -21,6 +22,14 @@ final class PanelController: NSObject, PanelChrome {
 
     private var interactionHold = false
     private(set) var isVisible = false
+
+    /// The background owns no other layer filters today, but retain the exact filter
+    /// instance so this controller can remove only the transient panel blur.
+    private var panelBlurFilter: CIFilter?
+    /// Invalidates a stale exit completion when the panel is reopened mid-close.
+    private var exitAnimationGeneration = 0
+    /// Invalidates an entrance blur cleanup once an exit begins.
+    private var entranceBlurGeneration = 0
 
     /// The status-item button we anchored to (for re-positioning on expand).
     private weak var anchorButton: NSStatusBarButton?
@@ -108,6 +117,9 @@ final class PanelController: NSObject, PanelChrome {
 
     func show(from button: NSStatusBarButton?) {
         guard !isVisible else { return }
+        // A second status-item click can reopen while the previous exit animation
+        // is still in flight. Its completion must not order this new presentation out.
+        exitAnimationGeneration += 1
         anchorButton = button
 
         // Restore the remembered expanded state and size the window BEFORE showing,
@@ -139,6 +151,7 @@ final class PanelController: NSObject, PanelChrome {
 
         let finish: () -> Void = { [weak self] in
             guard let self else { return }
+            self.clearPanelBlur()
             self.window.orderOut(nil)
             self.controller.model.panelDidClose()
             self.controller.panelDidHide()
@@ -156,13 +169,14 @@ final class PanelController: NSObject, PanelChrome {
 
     private func animateEntrance() {
         guard let layer = background.layer else { return }
-        let reduce = Self.systemReduceMotion
+        let reduce = resolvedReduceMotion
         setAnchorPoint(CGPoint(x: 0.88, y: 1.0), for: background)
 
         let motion = controller.theme.motion.panelEnter
         let duration = reduce ? motion.reducedDuration : motion.duration
 
         layer.removeAllAnimations()
+        clearPanelBlur(from: layer)
         if reduce {
             layer.opacity = 1
             layer.transform = CATransform3DIdentity
@@ -183,7 +197,33 @@ final class PanelController: NSObject, PanelChrome {
         let transform = CABasicAnimation(keyPath: "transform")
         transform.fromValue = NSValue(caTransform3D: from)
         transform.toValue = NSValue(caTransform3D: CATransform3DIdentity)
-        group.animations = [opacity, transform]
+        let animations: [CAAnimation] = [opacity, transform]
+
+        let blurRadius = panelBlurRadius(entering: true, reduceMotion: reduce)
+        if blurRadius > 0, installPanelBlur(radius: blurRadius, on: layer) != nil {
+            let blur = CABasicAnimation(keyPath: "filters.gaussianBlur.inputRadius")
+            blur.fromValue = blurRadius
+            blur.toValue = 0
+            blur.duration = duration
+            blur.timingFunction = timing
+
+            entranceBlurGeneration += 1
+            let generation = entranceBlurGeneration
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { [weak self, weak layer] in
+                guard let self, let layer, self.entranceBlurGeneration == generation else { return }
+                self.clearPanelBlur(from: layer)
+            }
+            group.animations = animations
+            group.duration = duration
+            group.timingFunction = timing
+            layer.add(group, forKey: "enter")
+            layer.add(blur, forKey: "enterBlur")
+            CATransaction.commit()
+            return
+        }
+
+        group.animations = animations
         group.duration = duration
         group.timingFunction = timing
         layer.add(group, forKey: "enter")
@@ -191,7 +231,7 @@ final class PanelController: NSObject, PanelChrome {
 
     private func animateExit(completion: @escaping () -> Void) {
         guard let layer = background.layer else { completion(); return }
-        let reduce = Self.systemReduceMotion
+        let reduce = resolvedReduceMotion
         setAnchorPoint(CGPoint(x: 0.88, y: 1.0), for: background)
 
         let motion = controller.theme.motion.panelExit
@@ -199,11 +239,19 @@ final class PanelController: NSObject, PanelChrome {
         let timing = Self.timingFunction(for: motion.curve)
 
         layer.removeAllAnimations()
+        entranceBlurGeneration += 1
+        clearPanelBlur(from: layer)
+        exitAnimationGeneration += 1
+        let generation = exitAnimationGeneration
         CATransaction.begin()
-        CATransaction.setCompletionBlock {
+        CATransaction.setCompletionBlock { [weak self, weak layer] in
+            guard let self, let layer,
+                  self.exitAnimationGeneration == generation,
+                  !self.isVisible else { return }
             // Reset for the next open.
             layer.opacity = 1
             layer.transform = CATransform3DIdentity
+            self.clearPanelBlur(from: layer)
             completion()
         }
 
@@ -225,7 +273,69 @@ final class PanelController: NSObject, PanelChrome {
             transform.fillMode = .forwards
             layer.add(transform, forKey: "exitTransform")
         }
+
+        let blurRadius = panelBlurRadius(entering: false, reduceMotion: reduce)
+        if blurRadius > 0, installPanelBlur(radius: blurRadius, on: layer) != nil {
+            let blur = CABasicAnimation(keyPath: "filters.gaussianBlur.inputRadius")
+            blur.fromValue = 0
+            blur.toValue = blurRadius
+            blur.duration = duration
+            blur.timingFunction = timing
+            blur.isRemovedOnCompletion = false
+            blur.fillMode = .forwards
+            layer.add(blur, forKey: "exitBlur")
+        }
         CATransaction.commit()
+    }
+
+    /// The Core Image blur is safe only for Zen's opaque paper card. In
+    /// particular, never apply it to the vibrancy view, where it cannot compose
+    /// correctly with the window-server material, or to the cabinet surface.
+    private func panelBlurRadius(entering: Bool, reduceMotion: Bool) -> CGFloat {
+        guard !reduceMotion, case .paper = controller.currentPalette.surface else { return 0 }
+        let radius = controller.theme.motion.panelBlur(entering: entering, reduceMotion: reduceMotion)
+        guard radius.isFinite, radius > 0 else { return 0 }
+        return CGFloat(radius)
+    }
+
+    /// Installs a transient Core Image filter with its model value at the final
+    /// radius. The explicit animation supplies the visual start value, so the
+    /// filter is never left blurred once its animation is removed.
+    @discardableResult
+    private func installPanelBlur(radius: CGFloat, on layer: CALayer) -> CIFilter? {
+        clearPanelBlur(from: layer)
+        guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
+        filter.setDefaults()
+        filter.setValue(radius, forKey: kCIInputRadiusKey)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.filters = (layer.filters ?? []) + [filter]
+        CATransaction.commit()
+        panelBlurFilter = filter
+        return filter
+    }
+
+    /// Removes only this controller's filter so a future background-layer effect
+    /// cannot be accidentally stripped. This is called before every new lifecycle
+    /// animation and after a completed entrance/exit, including theme swaps.
+    private func clearPanelBlur(from layer: CALayer? = nil) {
+        guard let filter = panelBlurFilter else { return }
+        guard let layer = layer ?? background.layer else {
+            panelBlurFilter = nil
+            return
+        }
+        layer.removeAnimation(forKey: "enterBlur")
+        layer.removeAnimation(forKey: "exitBlur")
+        let remaining = (layer.filters ?? []).filter { candidate in
+            guard let candidate = candidate as? CIFilter else { return true }
+            return candidate !== filter
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.filters = remaining.isEmpty ? nil : remaining
+        CATransaction.commit()
+        panelBlurFilter = nil
     }
 
     /// The mockup's closed transform: translateY(-10px) scale(0.965). In the
@@ -274,6 +384,17 @@ final class PanelController: NSObject, PanelChrome {
                height: panelSize.height + 2 * PanelBackgroundView.margin)
     }
 
+    /// Horizontal distance from a card's right edge to the status-item-aligned
+    /// beak center. Kept pure so the 26pt macOS and 44pt Arcade/Zen metric values
+    /// can be regression-tested when OrdoApp gains a test target.
+    static func beakAnchorOffset(for metrics: ThemeMetrics) -> CGFloat {
+        #if DEBUG
+        assert(metrics.notchInsetFromRight >= 0)
+        assert(metrics.beakSize >= 0)
+        #endif
+        return CGFloat(metrics.notchInsetFromRight + metrics.beakSize / 2)
+    }
+
     private func position(for panelSize: CGSize) {
         let winSize = PanelController.windowSize(for: panelSize)
         let m = PanelBackgroundView.margin
@@ -291,7 +412,7 @@ final class PanelController: NSObject, PanelChrome {
         }
 
         let gap: CGFloat = 6
-        let beakInsetFromRight: CGFloat = 26 + controller.theme.metrics.beakSize / 2
+        let beakInsetFromRight = Self.beakAnchorOffset(for: controller.theme.metrics)
 
         // Desired card position.
         let cardTopY = buttonScreen.minY - gap
@@ -361,6 +482,7 @@ final class PanelController: NSObject, PanelChrome {
     // MARK: Appearance / theme
 
     func applyAppearance(setting: AppAppearance, systemIsDark: Bool) {
+        clearPanelBlur()
         let resolved = resolveAppearance(setting, systemIsDark: systemIsDark)
         // For a forced scheme, pin the window appearance so the vibrancy material
         // matches; for .system, let the hosting view inherit NSApp.effectiveAppearance.
@@ -373,30 +495,23 @@ final class PanelController: NSObject, PanelChrome {
             window.appearance = NSAppearance(named: .darkAqua)
         }
         _ = resolved
-        background.apply(palette: controller.currentPalette)
+        background.apply(palette: controller.currentPalette, metrics: controller.theme.metrics)
     }
 
     func themeChanged() {
+        // The palette may switch paper ↔ vibrancy/cabinet while the panel is on
+        // screen. Drop the transient filter before the persistent surface changes.
+        clearPanelBlur()
+        background.apply(palette: controller.currentPalette, metrics: controller.theme.metrics)
         if isVisible {
-            resizeForCurrentTheme()
+            // Re-resolve from the status-item anchor rather than merely preserving
+            // the old right edge: a live Mac → Arcade swap changes the notch inset
+            // from 26pt to 44pt and must keep the newly drawn beak under the item.
+            let panelSize = controller.settings.panelExpanded
+                ? controller.theme.metrics.panelExpandedSize
+                : controller.theme.metrics.panelCompactSize
+            position(for: panelSize)
         }
-        background.apply(palette: controller.currentPalette)
-    }
-
-    /// Resizes the already-visible window to the current theme's panel size,
-    /// anchored on the card's top-right corner.
-    private func resizeForCurrentTheme() {
-        let expanded = controller.settings.panelExpanded
-        let panelSize = expanded ? controller.theme.metrics.panelExpandedSize
-                                 : controller.theme.metrics.panelCompactSize
-        let newWinSize = PanelController.windowSize(for: panelSize)
-
-        let old = window.frame
-        let newOriginX = old.maxX - newWinSize.width
-        let newOriginY = old.maxY - newWinSize.height
-        var newFrame = NSRect(x: newOriginX, y: newOriginY, width: newWinSize.width, height: newWinSize.height)
-        newFrame = clampToScreen(newFrame, panelSize: panelSize)
-        window.setFrame(newFrame, display: true)
     }
 
     // MARK: Layer anchor helper
@@ -421,6 +536,12 @@ final class PanelController: NSObject, PanelChrome {
     /// the panel's own entrance/exit/morph honor it even before the interior appears.
     static var systemReduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    /// `AppModel` receives the SwiftUI accessibility environment after the host is
+    /// attached; the direct workspace read covers the earlier panel lifecycle.
+    private var resolvedReduceMotion: Bool {
+        Self.systemReduceMotion || controller.model.reduceMotion
     }
 
     static func timingFunction(for curve: MotionCurve) -> CAMediaTimingFunction {

@@ -12,46 +12,62 @@ struct TaskListView: View {
     let expanded: Bool
 
     @Environment(\.ordoTheme) private var theme
-    @Environment(\.ordoPalette) private var palette
 
     @State private var draggingID: UUID?
-    /// Measured viewport height, fed back as a `minHeight` so the all-cleared
-    /// state can cover the list even when its own content is shorter.
-    @State private var viewportHeight: CGFloat = 0
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: theme.usesCabinetRows ? 6 : 0) {
-                content
+        ZStack(alignment: .top) {
+            ScrollView {
+                listContent
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollContentBackground(.hidden)
+            .scrollIndicators(.automatic)
+            .scrollDisabled(hidesScrollableContent)
+            .opacity(hidesScrollableContent ? 0 : 1)
+            .allowsHitTesting(!hidesScrollableContent)
+            .accessibilityHidden(hidesScrollableContent)
+
+            if showsViewportFirstRunState {
+                firstRunState
+                    .padding(listInsets)
+                    .transition(.opacity)
+            }
+
+            if showsCoveringClearedState {
+                GeometryReader { _ in
+                    clearedState
+                }
+                .transition(.opacity.combined(with: .offset(y: 6)))
+            }
         }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: ListViewportHeightKey.self, value: proxy.size.height)
-            }
-        )
-        .onPreferenceChange(ListViewportHeightKey.self) { viewportHeight = $0 }
-        .scrollContentBackground(.hidden)
-        .scrollIndicators(.automatic)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(theme.layout.stageInsets.edgeInsets)
+        .padding(.top, theme.layout.stageTopSpacing)
+        .animation(clearedStateAnimation, value: showsCoveringClearedState)
+        .animation(completedListAnimation, value: hidesScrollableContent)
+    }
+
+    @ViewBuilder
+    private var listContent: some View {
+        LazyVStack(alignment: .leading, spacing: listRowSpacing) {
+            content
+        }
+        .padding(listInsets)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private var content: some View {
         if model.isFirstRunEmpty {
-            theme.firstRunEmptyState()
-                .frame(maxWidth: .infinity)
-        } else if model.isAllClearedToday && theme.clearedStateCoversList {
-            theme.allClearedState()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .frame(minHeight: viewportHeight)
-                .transition(.opacity)
+            if !showsViewportFirstRunState {
+                theme.firstRunEmptyState()
+                    .padding(stateInsets(theme.layout.emptyStateInsets))
+                    .frame(maxWidth: .infinity)
+            }
         } else {
-            if model.isAllClearedToday {
+            if model.isAllClearedToday && !theme.clearedStateCoversList {
                 theme.allClearedState()
+                    .padding(stateInsets(theme.layout.clearedStateInsets))
                     .frame(maxWidth: .infinity)
                     .transition(.opacity)
             }
@@ -88,10 +104,80 @@ struct TaskListView: View {
         }
     }
 
+    private var showsCoveringClearedState: Bool {
+        !model.isFirstRunEmpty
+            && model.isAllClearedToday
+            && theme.clearedStateCoversList
+            && !model.clearedPeek
+    }
+
+    /// Zen's absolute `.empty` state belongs to the finite stage viewport, not
+    /// to a self-sizing scroll document. Legacy themes retain their historical
+    /// in-list first-run treatment.
+    private var showsViewportFirstRunState: Bool {
+        model.isFirstRunEmpty && theme.layout.clearedStateFillsAvailableSpace
+    }
+
+    private var hidesScrollableContent: Bool {
+        showsCoveringClearedState || showsViewportFirstRunState
+    }
+
+    private var firstRunState: some View {
+        theme.firstRunEmptyState()
+            .padding(stateInsets(theme.layout.emptyStateInsets))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var clearedState: some View {
+        theme.allClearedState(onPeek: revealCompletedList)
+            .padding(stateInsets(theme.layout.clearedStateInsets))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var listInsets: EdgeInsets {
+        // The legacy signature views already own their historic 12/4/8 wrapper.
+        // Only new layouts consume their explicit list token here, avoiding a
+        // second inset around macOS and Arcade states.
+        if theme.layout == .legacy {
+            return EdgeInsets(top: 4, leading: 12, bottom: 8, trailing: 12)
+        }
+        return theme.layout.listInsets.edgeInsets
+    }
+
+    private var listRowSpacing: CGFloat {
+        theme.layout == .legacy
+            ? (theme.usesCabinetRows ? 6 : 0)
+            : theme.layout.listRowSpacing
+    }
+
+    private func stateInsets(_ insets: ThemeInsets) -> EdgeInsets {
+        // macOS and Arcade signature state views already include the legacy
+        // state insets. Zen's state primitives intentionally do not.
+        theme.layout == .legacy ? .init() : insets.edgeInsets
+    }
+
+    private var clearedStateAnimation: Animation? {
+        model.reduceMotion ? nil : .easeOut(duration: 0.62)
+    }
+
+    private var completedListAnimation: Animation? {
+        model.reduceMotion ? nil : .easeOut(duration: 0.38)
+    }
+
+    private func revealCompletedList() {
+        withAnimation(completedListAnimation) {
+            model.clearedPeek = true
+        }
+    }
+
     private func row(_ task: OrdoTask, index: Int? = nil) -> some View {
         TaskRowView(model: model, task: task, expanded: expanded, index: index)
             .id(task.id)
-            .transition(.ordoRowEntrance(theme.motion.rowEntranceTransform))
+            // Reduce Motion keeps list mutations in place; the full Zen entrance
+            // otherwise consumes its authored translate/scale/blur transform.
+            .transition(model.reduceMotion
+                ? .opacity
+                : .ordoRowEntrance(theme.motion.rowEntranceTransform))
     }
 }
 
@@ -147,14 +233,5 @@ private struct ReorderDropDelegate: DropDelegate {
         // would otherwise leave `isDragging` stuck true and wedge the defer system.
         // Clearing it here is safe: re-entering a row re-arms the drag via onDrag.
         model.isDragging = false
-    }
-}
-
-/// The `ScrollView`'s own (viewport) height, measured via a background
-/// `GeometryReader` — see the doc comment on `TaskListView.viewportHeight`.
-private struct ListViewportHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }

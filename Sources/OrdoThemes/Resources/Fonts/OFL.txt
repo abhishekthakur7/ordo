@@ -91,3 +91,19 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+-----------------------------------------------------------
+Additional bundled-font attributions
+-----------------------------------------------------------
+
+Shippori Mincho
+Copyright 2021 The Shippori Mincho Project Authors
+(https://github.com/fontdasu/ShipporiMincho)
+
+Zen Kaku Gothic New
+Copyright 2022 The Zen Kaku Gothic Project Authors
+(https://github.com/googlefonts/zen-kakugothic)
+
+The Shippori Mincho and Zen Kaku Gothic New font software is licensed under
+the SIL Open Font License, Version 1.1. The complete SIL Open Font License
+Version 1.1 text appears above and applies to these bundled fonts.

@@ -17,6 +17,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     static let showPanelNotification = Notification.Name("com.ordo.Ordo.showPanel")
 
     // Long-lived collaborators.
+    /// Non-nil only for an explicit ORDO_VISUAL_FIXTURE launch. Keeping the typed
+    /// scene here gives Phase 5 a hand-off point for the pending `.peeked` state.
+    private(set) var visualFixture: VisualFixture?
     let clock: OrdoClock
     let store: TaskStore
     let settings: AppSettings
@@ -47,12 +50,19 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     override init() {
         // Clock is shared by the store and the model so time is single-sourced (C6).
-        let clock = SystemClock()
+        let visualFixture = VisualFixture.activate()
+        self.visualFixture = visualFixture
+        let clock: OrdoClock = visualFixture?.clock ?? SystemClock()
         self.clock = clock
-        self.store = TaskStore(directory: Persistence.defaultDirectory, clock: clock)
-        self.settings = AppSettings()
+        self.store = TaskStore(directory: visualFixture?.directory ?? Persistence.defaultDirectory, clock: clock)
+        self.settings = visualFixture?.makeSettings() ?? AppSettings()
 
-        let theme = ThemeRegistry.shared.theme(idOrDefault: settings.themeID)
+        let theme: any Theme
+        if visualFixture != nil && settings.themeID == .zenInk {
+            theme = ZenInkTheme()
+        } else {
+            theme = ThemeRegistry.shared.theme(idOrDefault: settings.themeID)
+        }
         self.theme = theme
 
         // Real audio engine off the bundle; isEnabled synced from the saved pref.
@@ -97,8 +107,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         // Rollover triggers (§3.3) + external-edit watcher.
         triggers.start()
 
-        // Global summon hotkey (§4.4).
-        registerHotkey()
+        // Global summon hotkey (§4.4). Fixtures avoid registering a process-global
+        // binding while an automated capture is running.
+        if visualFixture == nil { registerHotkey() }
 
         // Appearance: observe both the system effective appearance and the setting.
         observeAppearance()
@@ -108,7 +119,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         observeSettings()
 
         // Launch-at-login: only acts once the user has consented (§4.2/§6.4).
-        syncLoginItem()
+        if visualFixture == nil { syncLoginItem() }
 
         // Distributed reveal from a second launch.
         DistributedNotificationCenter.default().addObserver(
@@ -127,7 +138,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         // First run: reveal the panel so the empty state greets the user, then ask
         // once (as a calm sheet) about launching at login.
-        if store.isFirstLaunch {
+        if store.isFirstLaunch && visualFixture == nil {
             showPanel()
             if !settings.launchAtLoginConsented {
                 presentNotice(Notices.firstRunConsentAlert(), ensureVisible: true) { [weak self] response in
@@ -139,8 +150,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
 
+        if let fixture = visualFixture {
+            // Fixture launch always reveals the panel. Wait for the entrance to
+            // settle before applying transient scene state (settings/undo/toggle).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.applyVisualFixture(fixture)
+            }
         // Debug-only: reveals the panel on launch when this env var is set.
-        if ProcessInfo.processInfo.environment["ORDO_DEBUG_OPEN_PANEL"] == "1" {
+        } else if ProcessInfo.processInfo.environment["ORDO_DEBUG_OPEN_PANEL"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 self?.showPanel()
             }
@@ -250,7 +267,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// when another live instance already holds it. A lock we cannot even create
     /// (unwritable dir) does not block launch — the app still runs, just unguarded.
     private func acquireInstanceLock() -> Bool {
-        let dir = Persistence.defaultDirectory
+        // A fixture lock belongs beside its fixture store; otherwise merely launching
+        // a capture would write `ordo.lock` into the user's Application Support dir.
+        let dir = visualFixture?.directory ?? Persistence.defaultDirectory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let lockURL = dir.appendingPathComponent("ordo.lock")
         let fd = open(lockURL.path, O_CREAT | O_RDWR, 0o644)
@@ -310,7 +329,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if settings.hotkey != lastHotkey {
             lastHotkey = settings.hotkey
             hotkey.unregister()
-            registerHotkey()
+            if visualFixture == nil { registerHotkey() }
         }
         if settings.themeID != lastThemeID {
             lastThemeID = settings.themeID
@@ -335,9 +354,20 @@ final class AppController: NSObject, NSApplicationDelegate {
     // MARK: Theme
 
     private func applyTheme() {
-        let newTheme = ThemeRegistry.shared.theme(idOrDefault: settings.themeID)
+        let newTheme: any Theme
+        if visualFixture != nil && settings.themeID == .zenInk {
+            newTheme = ZenInkTheme()
+        } else {
+            newTheme = ThemeRegistry.shared.theme(idOrDefault: settings.themeID)
+        }
         theme = newTheme
         model.theme = newTheme
+        // The engine is long-lived so in-flight voices can finish, but future events
+        // must use the newly selected theme's recipes immediately. Reassert the
+        // persisted preference because the sound seam also supports lightweight
+        // implementations that may not retain it across a live set update.
+        sounds.updateSoundSet(newTheme.soundSet)
+        sounds.isEnabled = settings.soundEnabled
         statusItem.updateGlyph()
         panel.themeChanged()
     }
@@ -363,8 +393,35 @@ final class AppController: NSObject, NSApplicationDelegate {
     // MARK: Login item
 
     private func syncLoginItem() {
+        guard visualFixture == nil else { return }
         loginItem.sync(enabled: settings.launchAtLoginEnabled,
                        consented: settings.launchAtLoginConsented)
+    }
+
+    // MARK: Visual fixtures
+
+    private func applyVisualFixture(_ fixture: VisualFixture) {
+        showPanel()
+        // `showPanel()` is intentionally first: it calls AppModel.panelWillOpen(),
+        // which clears settings state. Settled captures suppress model-local motion;
+        // ORDO_VISUAL_FIXTURE_MOTION=1 leaves it enabled for completion recordings.
+        model.reduceMotion = fixture.settleAnimations
+
+        switch fixture.scene {
+        case .settings:
+            model.settingsOpen = true
+        case .undo:
+            model.delete(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)))
+        case .completionMid:
+            model.toggle(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)))
+        case .peeked:
+            // The fixture has already seeded a fully completed Today list. Apply
+            // this transient request after opening, because panelWillOpen clears
+            // transient view state.
+            model.clearedPeek = fixture.requestsClearedPeek
+        case .populated, .oneCompleted, .allCleared, .firstRun, .agedTriage, .reset:
+            break
+        }
     }
 
     // MARK: Resolved appearance helper for the shell

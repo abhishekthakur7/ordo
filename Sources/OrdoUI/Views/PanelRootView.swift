@@ -53,6 +53,11 @@ public struct PanelRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        // Animate the HStack's layout, not only the rail's presentation. The
+        // panel window morphs on the same token; keeping the sibling main-column
+        // position in this transaction prevents rail content from painting over
+        // it during the 604 ↔ 380 point resize.
+        .animation(model.theme.motion.expandMorph.animation(reduceMotion: reduceMotion), value: expanded)
         .background(Color.clear)
         .environment(\.ordoTheme, model.theme)
         .environment(\.ordoPalette, palette)
@@ -76,6 +81,7 @@ public struct PanelRootView: View {
     private var rail: some View {
         let dividerEdge: Alignment = model.theme.railOnTrailing ? .leading : .trailing
         return RailView(model: model)
+            .offset(x: expanded ? 0 : -10)
             .frame(width: expanded ? model.theme.metrics.railWidth : 0, alignment: .leading)
             .opacity(expanded ? 1 : 0)
             .clipped()
@@ -84,14 +90,17 @@ public struct PanelRootView: View {
                     Rectangle().fill(palette.divider).frame(width: palette.hairlineWidth)
                 }
             }
-            .animation(model.theme.motion.expandMorph.animation(reduceMotion: reduceMotion), value: expanded)
     }
 
     // MARK: Main column
 
     private var mainColumn: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: model.theme.layout.mainColumnSpacing) {
             HeaderView(model: model, chrome: chrome)
+            if let headerAccessory = model.theme.headerAccessory() {
+                headerAccessory
+                    .padding(headerAccessoryInsets)
+            }
             TabBarView(model: model)
             if let statusRow = model.theme.statusRow(done: model.railDone, total: model.railTotal,
                                                        isToday: model.tab == .today) {
@@ -102,10 +111,24 @@ public struct PanelRootView: View {
             ComposerView(model: model, focus: $focus)
             FooterView(model: model)
         }
-        .frame(width: model.theme.metrics.mainColumnWidth)
+        .padding(mainColumnInsets)
+        .frame(width: model.theme.mainColumnFlexes ? nil : model.theme.metrics.mainColumnWidth)
+        .frame(maxWidth: model.theme.mainColumnFlexes ? .infinity : nil)
         .overlay(alignment: .bottom) { undoToast }
         .overlay { settingsOverlay }
         .overlay { arcadeFX }
+    }
+
+    private var mainColumnInsets: EdgeInsets {
+        let insets = model.theme.layout.mainColumnInsets
+        return EdgeInsets(top: insets.top, leading: insets.leading,
+                          bottom: insets.bottom, trailing: insets.trailing)
+    }
+
+    private var headerAccessoryInsets: EdgeInsets {
+        let insets = model.theme.layout.dividerInsets
+        return EdgeInsets(top: insets.top, leading: insets.leading,
+                          bottom: insets.bottom, trailing: insets.trailing)
     }
 
     /// Completion-FX (score-pop, coin burst, confetti), mounted only when the

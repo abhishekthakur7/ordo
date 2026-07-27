@@ -1,5 +1,34 @@
 import SwiftUI
 import AppKit
+import OrdoCore
+
+/// The composer treatment. `card` and `cabinet` reproduce the two existing
+/// shared-view branches; `ink` is the borderless paper treatment.
+public enum ComposerStyle: Sendable, Hashable {
+    case card
+    case cabinet
+    case ink
+}
+
+/// Which content appears in each appearance-selector segment.
+public enum AppearanceSegmentStyle: Sendable, Hashable {
+    case iconAndLabel
+    case iconOnly
+    case labelOnly
+}
+
+/// The footer sound-control treatment.
+public enum SoundControlStyle: Sendable, Hashable {
+    case switchTrack
+    case cabinetSwitch
+    case ghostIcon
+}
+
+/// The selection indicator used by the tab bar.
+public enum TabIndicatorStyle: Sendable, Hashable {
+    case thumb
+    case custom
+}
 
 /// The design-system contract (PLAN.md C1); OrdoUI/OrdoApp code against this surface only.
 /// Light/dark palettes are independently art-directed (never inversions); signature views take
@@ -43,6 +72,9 @@ public protocol Theme: Sendable {
     var motion: Motion { get }
     /// Layout metrics (panel sizes, radii, ring geometry).
     var metrics: ThemeMetrics { get }
+    /// Shared-view geometry. Defaults exactly to the existing macOS layout;
+    /// themes can override it once the shared wrappers consume these tokens.
+    var layout: ThemeLayout { get }
     /// Declarative sound set for all eight `SoundEvent`s.
     var soundSet: SoundSet { get }
 
@@ -101,6 +133,22 @@ public protocol Theme: Sendable {
     /// Whether the all-cleared celebration covers the list area (replacing the
     /// task rows) instead of rendering above them. Default `false`.
     var clearedStateCoversList: Bool { get }
+    /// Whether a covering all-cleared state offers an interactive peek back to
+    /// the list. Default `false` preserves current behavior.
+    var clearedStateIsPeekable: Bool { get }
+    /// Whether the main column expands to fill panel space left by its rail.
+    /// Default `false` preserves the current fixed-width behavior.
+    var mainColumnFlexes: Bool { get }
+
+    /// Composer presentation, derived from the existing cabinet flag by
+    /// default so macOS and Arcade retain their current branch.
+    var composerStyle: ComposerStyle { get }
+    /// Appearance-selector presentation, derived from the existing label flag.
+    var appearanceSegmentStyle: AppearanceSegmentStyle { get }
+    /// Sound-control presentation, derived from the existing cabinet flag.
+    var soundControlStyle: SoundControlStyle { get }
+    /// Tab indicator presentation. Existing themes use the shared thumb.
+    var tabIndicatorStyle: TabIndicatorStyle { get }
 
     // MARK: Structural content builders (primitives only; nil → shared view
     // keeps its current layout)
@@ -118,6 +166,20 @@ public protocol Theme: Sendable {
     /// Composer placeholder text, or `nil` to keep the shared default.
     /// `isToday` is `tab == .today`. Default `nil`.
     func composerPlaceholder(isToday: Bool) -> String?
+    /// Content below the header and above the tabs (for example, a divider).
+    func headerAccessory() -> AnyView?
+    /// Content before the header's settings/expand controls.
+    func headerTrailingAccessory(done: Int, total: Int, expanded: Bool) -> AnyView?
+    /// Complete tab-bar replacement. `nil` keeps the shared segmented tabs.
+    func tabBarContent(
+        tab: TaskList,
+        remaining: @escaping (TaskList) -> Int,
+        onSelect: @escaping (TaskList) -> Void
+    ) -> AnyView?
+    /// Content preceding row actions, replacing the normal age/index marker.
+    func rowTrailingAccessory(done: Bool, age: Int, triage: Bool, index: Int?) -> AnyView?
+    /// All-cleared content with an optional escape hatch back to the list.
+    func allClearedState(onPeek: @escaping () -> Void) -> AnyView
 }
 
 extension Theme {
@@ -143,11 +205,32 @@ extension Theme {
     public var usesCabinetIconButtons: Bool { false }
     public var usesCabinetControls: Bool { false }
     public var clearedStateCoversList: Bool { false }
+    public var clearedStateIsPeekable: Bool { false }
+    public var mainColumnFlexes: Bool { false }
+
+    public var composerStyle: ComposerStyle { usesCabinetControls ? .cabinet : .card }
+    public var appearanceSegmentStyle: AppearanceSegmentStyle {
+        showsAppearanceLabels ? .iconAndLabel : .iconOnly
+    }
+    public var soundControlStyle: SoundControlStyle {
+        usesCabinetControls ? .cabinetSwitch : .switchTrack
+    }
+    public var tabIndicatorStyle: TabIndicatorStyle { .thumb }
+    public var layout: ThemeLayout { .legacy }
 
     public func headerLeading(score: Int) -> AnyView? { nil }
     public func statusRow(done: Int, total: Int, isToday: Bool) -> AnyView? { nil }
     public func railContent(done: Int, total: Int, remaining: Int, score: Int, best: Int, streak: Int) -> AnyView? { nil }
     public func composerPlaceholder(isToday: Bool) -> String? { nil }
+    public func headerAccessory() -> AnyView? { nil }
+    public func headerTrailingAccessory(done: Int, total: Int, expanded: Bool) -> AnyView? { nil }
+    public func tabBarContent(
+        tab: TaskList,
+        remaining: @escaping (TaskList) -> Int,
+        onSelect: @escaping (TaskList) -> Void
+    ) -> AnyView? { nil }
+    public func rowTrailingAccessory(done: Bool, age: Int, triage: Bool, index: Int?) -> AnyView? { nil }
+    public func allClearedState(onPeek: @escaping () -> Void) -> AnyView { allClearedState() }
 }
 
 extension ResolvedAppearance {

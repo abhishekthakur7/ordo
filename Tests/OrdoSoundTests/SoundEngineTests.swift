@@ -21,6 +21,7 @@ final class SoundEngineTests: XCTestCase {
     func testNullPlayerConformsToSoundPlaying() {
         let player: any SoundPlaying = NullSoundPlayer()
         player.play(.complete)
+        player.updateSoundSet(MacOSTheme().soundSet)
         player.isEnabled = false
         XCTAssertFalse(player.isEnabled)
     }
@@ -63,7 +64,45 @@ final class SoundEngineTests: XCTestCase {
     func testEngineUsableThroughProtocol() {
         let player: any SoundPlaying = SoundEngine(soundSet: MacOSTheme().soundSet, enabled: false)
         player.play(.tabSwitch)
+        player.updateSoundSet(ArcadeTheme().soundSet)
         player.isEnabled = true
         XCTAssertTrue(player.isEnabled)
+    }
+
+    // MARK: Variants and live updates
+
+    func testSixRecipeVariantsRoundRobinInDeclarationOrder() {
+        let recipes = (0..<6).map { index in
+            SoundRecipe([
+                .oscillator(Oscillator(
+                    wave: .sine,
+                    frequency: 220 + Double(index) * 20,
+                    duration: 0.02,
+                    peakGain: 0.02
+                ))
+            ])
+        }
+        let engine = SoundEngine(soundSet: SoundSet(variants: [.add: recipes]), enabled: false)
+
+        XCTAssertEqual(engine.variantCount(for: .add), 6)
+        XCTAssertEqual((0..<8).compactMap { _ in engine.selectNextVariantForTesting(.add) },
+                       [0, 1, 2, 3, 4, 5, 0, 1])
+    }
+
+    func testLiveSoundSetUpdateReplacesVariantsAndResetsRoundRobin() {
+        let first = SoundRecipe([
+            .oscillator(Oscillator(wave: .sine, frequency: 220, duration: 0.02, peakGain: 0.02))
+        ])
+        let replacement = SoundRecipe([
+            .oscillator(Oscillator(wave: .triangle, frequency: 440, duration: 0.02, peakGain: 0.02))
+        ])
+        let engine = SoundEngine(soundSet: SoundSet(variants: [.add: [first, first]]), enabled: false)
+
+        XCTAssertEqual(engine.selectNextVariantForTesting(.add), 0)
+        engine.updateSoundSet(SoundSet(variants: [.complete: [replacement]]))
+        // `variantCount` synchronizes with the engine queue, so this observes the update.
+        XCTAssertEqual(engine.variantCount(for: .add), 0)
+        XCTAssertEqual(engine.variantCount(for: .complete), 1)
+        XCTAssertEqual(engine.selectNextVariantForTesting(.complete), 0)
     }
 }

@@ -70,6 +70,10 @@ public final class AppModel {
     /// Whether the in-panel settings pane is showing.
     public var settingsOpen = false
 
+    /// Whether a peekable all-cleared state has yielded to its completed list.
+    /// This is session-local presentation state, never task data or a preference.
+    public var clearedPeek = false
+
     /// Reduce-Motion mirror, pushed from the SwiftUI environment by the root view.
     /// Drives whether reflow delays are honored (mockup skips them under reduced).
     public var reduceMotion = false {
@@ -152,6 +156,7 @@ public final class AppModel {
         _ = store.catchUp()
         tab = .today
         selectedID = nil
+        clearedPeek = false
         // Composer DRAFT is preserved across close/reopen within a session (§4.1) —
         // do NOT clear composerText here. Only the transient large-paste confirm is
         // dropped. Defensively clear a stuck drag flag so the defer system can't wedge.
@@ -230,6 +235,7 @@ public final class AppModel {
     // MARK: Tab & selection
 
     public func selectTab(_ newTab: TaskList) {
+        clearedPeek = false
         guard tab != newTab else { return }
         tab = newTab
         selectedID = nil
@@ -326,6 +332,10 @@ public final class AppModel {
         let becomingDone = !task.done
         let change = store.toggleDone(id)
         guard !change.isEmpty else { return }
+
+        // Completion changes invalidate a completed-list snapshot revealed from
+        // the all-cleared overlay, including the delayed two-phase reflow below.
+        clearedPeek = false
 
         sounds.play(becomingDone ? .complete : .uncheck)
 
@@ -563,6 +573,9 @@ public final class AppModel {
     /// Every mutation source funnels through here (§6.3).
     func applyChange(_ change: ChangeSet, animation: MotionToken) {
         guard !change.isEmpty else { return }
+        // Every store-backed mutation reaches this path. A peek belongs only to
+        // the exact completed snapshot that exposed it.
+        clearedPeek = false
         withAnimation(animation.animation(reduceMotion: reduceMotion)) {
             rebuild()
         }

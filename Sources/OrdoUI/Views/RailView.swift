@@ -44,9 +44,22 @@ struct RailView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(EdgeInsets(top: 26, leading: 22, bottom: 26, trailing: 22))
+            .padding(railInsets)
             .frame(width: theme.metrics.railWidth, alignment: .leading)
         }
+    }
+
+    private var railInsets: EdgeInsets {
+        // `ThemeLayout.legacy.railInsets` is deliberately zero, while the
+        // existing shared rail has its own 26/22/26 content inset. Retain that
+        // compatibility geometry for the two shipped themes; non-legacy shared
+        // rails consume their explicit layout token. Full rail replacements do
+        // not enter this branch, so a Zen rail is never double-padded.
+        let insets = theme.layout == .legacy
+            ? ThemeInsets(top: 26, leading: 22, bottom: 26, trailing: 22)
+            : theme.layout.railInsets
+        return EdgeInsets(top: insets.top, leading: insets.leading,
+                          bottom: insets.bottom, trailing: insets.trailing)
     }
 
     /// A 0.5px stat-row hairline (mockup .rail-line border-bottom), thickening under

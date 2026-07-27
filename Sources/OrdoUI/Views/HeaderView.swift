@@ -14,26 +14,36 @@ struct HeaderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: theme.layout.headerContentSpacing) {
             leadingContent
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 6) {
-                IconButton(action: toggleSettings, accessibilityLabel: UIStrings.settingsTitle) {
-                    StrokeIcon(systemName: "gearshape")
+            HStack(spacing: theme.layout.headerTrailingAccessorySpacing) {
+                if let accessory = theme.headerTrailingAccessory(
+                    done: model.doneRows.count,
+                    total: model.openRows.count + model.doneRows.count,
+                    expanded: model.settings.panelExpanded
+                ) {
+                    accessory
                 }
 
-                IconButton(action: toggleExpand,
-                           accessibilityLabel: model.settings.panelExpanded
-                            ? "Collapse planning view" : "Expand planning view") {
-                    ExpandGlyphIcon()
-                        .rotationEffect(.degrees(model.settings.panelExpanded ? 180 : 0))
-                        .animation(theme.motion.expandMorph.animation(reduceMotion: reduceMotion),
-                                   value: model.settings.panelExpanded)
+                HStack(spacing: theme.layout.headerControlsSpacing) {
+                    IconButton(action: toggleSettings, accessibilityLabel: UIStrings.settingsTitle) {
+                        StrokeIcon(systemName: "gearshape")
+                    }
+
+                    IconButton(action: toggleExpand,
+                               accessibilityLabel: model.settings.panelExpanded
+                                ? "Collapse planning view" : "Expand planning view") {
+                        ExpandGlyphIcon()
+                            .rotationEffect(.degrees(model.settings.panelExpanded ? 180 : 0))
+                            .animation(theme.motion.expandMorph.animation(reduceMotion: reduceMotion),
+                                       value: model.settings.panelExpanded)
+                    }
                 }
             }
         }
-        .padding(EdgeInsets(top: 15, leading: 18, bottom: 10, trailing: 12))
+        .padding(headerInsets)
     }
 
     /// The header's leading cluster. When the theme supplies `headerLeading`
@@ -44,7 +54,7 @@ struct HeaderView: View {
         if let leading = theme.headerLeading(score: model.arcadeScore) {
             leading
         } else {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: theme.layout.headerTextSpacing) {
                 theme.typeScale.greeting.styled(model.greeting)
                     .foregroundStyle(palette.ink)
                 theme.typeScale.date.styled(model.dateLine)
@@ -52,6 +62,12 @@ struct HeaderView: View {
             }
             .accessibilityElement(children: .combine)
         }
+    }
+
+    private var headerInsets: EdgeInsets {
+        let insets = theme.layout.headerInsets
+        return EdgeInsets(top: insets.top, leading: insets.leading,
+                          bottom: insets.bottom, trailing: insets.trailing)
     }
 
     private func toggleSettings() {

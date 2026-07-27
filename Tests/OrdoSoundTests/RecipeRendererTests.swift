@@ -128,6 +128,54 @@ final class RecipeRendererTests: XCTestCase {
         XCTAssertLessThan(tailPeak, 0.02)
     }
 
+    // MARK: Koto pluck
+
+    func testPluckIsDeterministicNonSilentAndHasSilentTail() {
+        let recipe = SoundRecipe([
+            .pluck(Pluck(frequency: 293.66, peakGain: 0.15, duration: 0.7))
+        ])
+        let a = RecipeRenderer.render(recipe, sampleRate: sr)
+        let b = RecipeRenderer.render(recipe, sampleRate: sr)
+
+        XCTAssertEqual(a.samples, b.samples, "the seeded pick transient must be reproducible")
+        XCTAssertFalse(a.isSilent(), "pluck must produce sound")
+        XCTAssertLessThanOrEqual(a.peak, RecipeRenderer.safeCeiling)
+        XCTAssertEqual(a.frameCount, Int((recipe.duration * sr).rounded(.up)))
+        XCTAssertLessThan(a.samples.suffix(64).map { abs($0) }.max() ?? 1, 0.001)
+    }
+
+    func testPluckSweptFilterDiffersFromStaticFilter() {
+        let swept = RecipeRenderer.render(SoundRecipe([
+            .pluck(Pluck(frequency: 392, peakGain: 0.1, duration: 0.5))
+        ]), sampleRate: sr)
+        let staticFilter = RecipeRenderer.render(SoundRecipe([
+            .pluck(Pluck(
+                frequency: 392,
+                peakGain: 0.1,
+                duration: 0.5,
+                lowpassStart: 4_200,
+                lowpassEnd: 4_200
+            ))
+        ]), sampleRate: sr)
+
+        XCTAssertNotEqual(swept.samples, staticFilter.samples,
+                          "the 4200→900 Hz lowpass sweep must affect the rendered waveform")
+    }
+
+    // MARK: SoundSet compatibility
+
+    func testSingleRecipeSoundSetAPIRemainsCompatible() {
+        let recipe = SoundRecipe([
+            .oscillator(Oscillator(wave: .sine, frequency: 440, duration: 0.05, peakGain: 0.03))
+        ])
+        let set = SoundSet([.add: recipe])
+
+        XCTAssertEqual(set[.add], recipe)
+        XCTAssertEqual(set.recipe(for: .add), recipe)
+        XCTAssertEqual(set.variants(for: .add), [recipe])
+        XCTAssertEqual(set.events, [.add])
+    }
+
     // MARK: helpers
 
     private func energy(_ s: [Float], _ lo: Int, _ hi: Int) -> Double {

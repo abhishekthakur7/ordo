@@ -20,6 +20,7 @@ struct TaskRowView: View {
 
     @State private var hover = false
     @State private var checkboxHover = false
+    @GestureState private var rowPressed = false
     @FocusState private var editFocused: Bool
     /// Latches once the editor has actually GAINED focus, so a blur that fires before
     /// focus is ever established (the non-activating-panel race) can't insta-commit.
@@ -29,6 +30,18 @@ struct TaskRowView: View {
     private var isEditing: Bool { model.editingTaskID == task.id }
     private var age: Int { model.age(of: task) }
     private var triage: Bool { model.isInTriage(task) }
+
+    /// Zen's title reserve marks the only current row treatment that asks for
+    /// the paper-light 0.992 press echo. Legacy/cabinet reserves are zero, so
+    /// their geometry and interaction remain unchanged without a new capability.
+    private var rowPressScale: CGFloat {
+        theme.layout.rowTitleTrailingReserve > 0 ? 0.992 : 1
+    }
+
+    private var rowPressGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .updating($rowPressed) { _, state, _ in state = true }
+    }
 
     @ViewBuilder
     var body: some View {
@@ -42,18 +55,20 @@ struct TaskRowView: View {
     /// Flat hover/press tint background, no shadow layer, no done-opacity
     /// dimming — macOS reflows done rows into their own section instead.
     private var macOSBody: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: theme.layout.rowStackSpacing) {
             mainRow
             if triage && !isEditing {
                 triageAffordance
             }
         }
-        .padding(.vertical, 9)
-        .padding(.horizontal, 10)
+        .padding(rowInsets)
         .background(rowBackground)
         .contentShape(RoundedRectangle(cornerRadius: theme.metrics.rowCornerRadius, style: .continuous))
         .onHover { hover = $0 }
         .onTapGesture { model.selectedID = task.id }
+        .scaleEffect(rowPressed ? rowPressScale : 1)
+        .animation(theme.motion.pressEcho.animation(reduceMotion: reduceMotion), value: rowPressed)
+        .simultaneousGesture(rowPressGesture, isEnabled: rowPressScale < 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(task.done ? [.isSelected] : [])
@@ -74,6 +89,9 @@ struct TaskRowView: View {
         .animation(theme.motion.hoverFade.animation(reduceMotion: reduceMotion), value: hover)
         .onHover { hover = $0 }
         .onTapGesture { model.selectedID = task.id }
+        .scaleEffect(rowPressed ? rowPressScale : 1)
+        .animation(theme.motion.pressEcho.animation(reduceMotion: reduceMotion), value: rowPressed)
+        .simultaneousGesture(rowPressGesture, isEnabled: rowPressScale < 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(task.done ? [.isSelected] : [])
@@ -81,14 +99,13 @@ struct TaskRowView: View {
     }
 
     private var cabinetCardContent: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: theme.layout.rowStackSpacing) {
             mainRow
             if triage && !isEditing {
                 triageAffordance
             }
         }
-        .padding(.vertical, 9)
-        .padding(.horizontal, 10)
+        .padding(rowInsets)
         .background(cabinetCardBackground)
         .contentShape(RoundedRectangle(cornerRadius: theme.metrics.rowCornerRadius, style: .continuous))
         .opacity(task.done ? 0.62 : 1)
@@ -128,7 +145,7 @@ struct TaskRowView: View {
     // MARK: Main row
 
     private var mainRow: some View {
-        HStack(alignment: .center, spacing: 11) {
+        HStack(alignment: .center, spacing: theme.layout.rowContentSpacing) {
             checkbox
             titleOrEditor
             trailing
@@ -169,17 +186,21 @@ struct TaskRowView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, theme.layout.rowTitleTrailingReserve)
         } else {
             theme.taskTitle(task.title, done: task.done)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, theme.layout.rowTitleTrailingReserve)
                 .help(task.title)
                 .onTapGesture { handleTitleTap() }
         }
     }
 
     private var trailing: some View {
-        HStack(spacing: 6) {
-            if age >= 1 {
+        HStack(spacing: theme.layout.rowTrailingSpacing) {
+            if let accessory = theme.rowTrailingAccessory(done: task.done, age: age, triage: triage, index: index) {
+                accessory
+            } else if age >= 1 {
                 theme.ageMarker(days: age, triage: triage)
             } else if theme.usesCabinetRows, let index {
                 indexBadge(index)
@@ -201,7 +222,7 @@ struct TaskRowView: View {
     }
 
     private var rowActions: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: theme.layout.rowActionsSpacing) {
             IconButton(action: { model.tab == .today ? model.demote(task.id) : model.promote(task.id) },
                        size: 24, cornerRadius: 6,
                        accessibilityLabel: model.tab == .today ? UIStrings.actionMoveToLongterm : UIStrings.actionDoToday) {
@@ -218,7 +239,7 @@ struct TaskRowView: View {
     // MARK: Triage affordance (§3.5) — quiet, non-modal
 
     private var triageAffordance: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: theme.layout.triageContentSpacing) {
             Text(UIStrings.triagePrompt)
                 .typeToken(theme.typeScale.emptyBody)
                 .foregroundStyle(palette.ink3)
@@ -227,8 +248,7 @@ struct TaskRowView: View {
             triageButton(UIStrings.triageKeep) { model.keepInTriage(task.id) }
             triageButton(UIStrings.triageDelete, destructive: true) { model.delete(task.id) }
         }
-        .padding(.leading, theme.metrics.checkboxSize + 11)
-        .padding(.trailing, 2)
+        .padding(triageInsets)
     }
 
     private func triageButton(_ title: String, destructive: Bool = false, _ action: @escaping () -> Void) -> some View {
@@ -255,6 +275,18 @@ struct TaskRowView: View {
                 shape.fill(palette.rowHover)
             }
         }
+    }
+
+    private var rowInsets: EdgeInsets {
+        let insets = theme.layout.rowInsets
+        return EdgeInsets(top: insets.top, leading: insets.leading,
+                          bottom: insets.bottom, trailing: insets.trailing)
+    }
+
+    private var triageInsets: EdgeInsets {
+        let insets = theme.layout.triageInsets
+        return EdgeInsets(top: insets.top, leading: insets.leading,
+                          bottom: insets.bottom, trailing: insets.trailing)
     }
 
     // MARK: Interaction

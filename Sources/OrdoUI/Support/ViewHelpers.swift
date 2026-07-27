@@ -19,16 +19,21 @@ extension View {
 }
 
 extension AnyTransition {
-    /// The theme's row-entrance transform (translateY + scale + fade) as an
+    /// The theme's row-entrance transform (translateY + scale + blur + fade) as an
     /// asymmetric transition: entrance from the transform, removal a quick fade.
     static func ordoRowEntrance(_ transform: RowEntranceTransform) -> AnyTransition {
         let insertion = AnyTransition.modifier(
-            active: RowEntranceModifier(translateY: transform.translateY, scale: transform.scale, opacity: 0),
-            identity: RowEntranceModifier(translateY: 0, scale: 1, opacity: 1)
+            active: RowEntranceModifier(
+                translateY: transform.translateY,
+                scale: transform.scale,
+                blur: transform.blur,
+                opacity: 0
+            ),
+            identity: RowEntranceModifier(translateY: 0, scale: 1, blur: 0, opacity: 1)
         )
         let removal = AnyTransition.modifier(
-            active: RowEntranceModifier(translateY: 0, scale: 0.98, opacity: 0),
-            identity: RowEntranceModifier(translateY: 0, scale: 1, opacity: 1)
+            active: RowEntranceModifier(translateY: 0, scale: 0.98, blur: 0, opacity: 0),
+            identity: RowEntranceModifier(translateY: 0, scale: 1, blur: 0, opacity: 1)
         )
         return .asymmetric(insertion: insertion, removal: removal)
     }
@@ -37,12 +42,15 @@ extension AnyTransition {
 private struct RowEntranceModifier: ViewModifier {
     let translateY: Double
     let scale: Double
+    let blur: Double
     let opacity: Double
+
     func body(content: Content) -> some View {
         content
             .opacity(opacity)
             .scaleEffect(scale)
             .offset(y: translateY)
+            .blur(radius: blur)
     }
 }
 

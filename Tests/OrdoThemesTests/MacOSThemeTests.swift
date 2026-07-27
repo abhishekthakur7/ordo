@@ -294,9 +294,10 @@ final class MacOSThemeTests: XCTestCase {
     func testRegistryDefaultAndLookup() {
         let reg = ThemeRegistry.shared
         XCTAssertEqual(reg.defaultTheme.id, .macOS)
-        XCTAssertEqual(reg.all.count, 2)
+        XCTAssertEqual(reg.all.count, 3)
         XCTAssertEqual(reg.theme(id: .macOS)?.id, .macOS)
         XCTAssertEqual(reg.theme(id: .arcade)?.id, .arcade) // now shipped
+        XCTAssertEqual(reg.theme(id: .zenInk)?.id, .zenInk)
         XCTAssertEqual(reg.theme(idOrDefault: .swiss).id, .macOS) // still reserved, falls back
     }
 }

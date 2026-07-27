@@ -26,6 +26,14 @@ public protocol SoundPlaying: AnyObject {
     var isEnabled: Bool { get set }
     /// Play the recipe for `event` (respecting `isEnabled` and voice stealing).
     func play(_ event: SoundEvent)
+    /// Replace the declarative sound set used for future events. Implementations that
+    /// cannot change sounds live may safely ignore this request.
+    func updateSoundSet(_ soundSet: SoundSet)
+}
+
+public extension SoundPlaying {
+    /// Compatibility default for lightweight players and existing conformers.
+    func updateSoundSet(_ soundSet: SoundSet) {}
 }
 
 // MARK: - Declarative recipe model
@@ -54,7 +62,6 @@ public struct Oscillator: Sendable, Hashable {
     public var peakGain: Double
     /// Exponential attack time in seconds.
     public var attack: Double
-
     public init(
         wave: Waveform,
         startDelay: Double = 0,
@@ -167,11 +174,89 @@ public struct NoiseSwoosh: Sendable, Hashable {
     }
 }
 
+/// A koto-style pluck: three inharmonic partials through a swept lowpass, with a
+/// short high-passed noise pick. Defaults transcribe Zen Ink's `pluck()` helper.
+public struct Pluck: Sendable, Hashable {
+    /// Start offset from the event's t0, in seconds.
+    public var startDelay: Double
+    /// Fundamental frequency in Hz.
+    public var frequency: Double
+    /// Peak gain of the triangle fundamental.
+    public var peakGain: Double
+    /// Fundamental decay time to near silence.
+    public var duration: Double
+    /// Exponential attack time in seconds.
+    public var attack: Double
+    /// Frequency ratio of the second sine partial (2.003).
+    public var secondPartialRatio: Double
+    /// Gain of the second sine partial relative to the fundamental (0.32).
+    public var secondPartialGain: Double
+    /// Frequency ratio of the third sine partial (3.01).
+    public var thirdPartialRatio: Double
+    /// Gain of the third sine partial relative to the fundamental (0.12).
+    public var thirdPartialGain: Double
+    /// Extra decay reduction per partial-frequency multiple (0.15).
+    public var partialDecayPerMultiplier: Double
+    /// Lowpass cutoff at onset, in Hz.
+    public var lowpassStart: Double
+    /// Lowpass cutoff after `lowpassSweepDuration`, in Hz.
+    public var lowpassEnd: Double
+    /// Duration of the lowpass cutoff sweep, in seconds.
+    public var lowpassSweepDuration: Double
+    /// Noise-pick highpass cutoff, in Hz.
+    public var pickHighpass: Double
+    /// Noise-pick peak gain.
+    public var pickGain: Double
+    /// Noise-pick duration, in seconds.
+    public var pickDuration: Double
+    /// Noise-pick attack time, in seconds.
+    public var pickAttack: Double
+
+    public init(
+        startDelay: Double = 0,
+        frequency: Double,
+        peakGain: Double,
+        duration: Double,
+        attack: Double = 0.005,
+        secondPartialRatio: Double = 2.003,
+        secondPartialGain: Double = 0.32,
+        thirdPartialRatio: Double = 3.01,
+        thirdPartialGain: Double = 0.12,
+        partialDecayPerMultiplier: Double = 0.15,
+        lowpassStart: Double = 4_200,
+        lowpassEnd: Double = 900,
+        lowpassSweepDuration: Double = 0.45,
+        pickHighpass: Double = 2_000,
+        pickGain: Double = 0.06,
+        pickDuration: Double = 0.05,
+        pickAttack: Double = 0.002
+    ) {
+        self.startDelay = startDelay
+        self.frequency = frequency
+        self.peakGain = peakGain
+        self.duration = duration
+        self.attack = attack
+        self.secondPartialRatio = secondPartialRatio
+        self.secondPartialGain = secondPartialGain
+        self.thirdPartialRatio = thirdPartialRatio
+        self.thirdPartialGain = thirdPartialGain
+        self.partialDecayPerMultiplier = partialDecayPerMultiplier
+        self.lowpassStart = lowpassStart
+        self.lowpassEnd = lowpassEnd
+        self.lowpassSweepDuration = lowpassSweepDuration
+        self.pickHighpass = pickHighpass
+        self.pickGain = pickGain
+        self.pickDuration = pickDuration
+        self.pickAttack = pickAttack
+    }
+}
+
 /// One layer of a recipe.
 public enum SoundComponent: Sendable, Hashable {
     case oscillator(Oscillator)
     case marimba(Marimba)
     case noise(NoiseSwoosh)
+    case pluck(Pluck)
 
     /// Longest time this component occupies, for buffer sizing.
     public var tailTime: Double {
@@ -179,6 +264,7 @@ public enum SoundComponent: Sendable, Hashable {
         case .oscillator(let o): return o.startDelay + o.duration + 0.02
         case .marimba(let m): return m.startDelay + m.stopTime
         case .noise(let n): return n.startDelay + n.duration + 0.02
+        case .pluck(let p): return p.startDelay + max(p.duration, p.pickDuration) + 0.02
         }
     }
 }
@@ -199,22 +285,36 @@ public struct SoundRecipe: Sendable, Hashable {
 
 /// A theme's complete mapping of events → recipes.
 public struct SoundSet: Sendable, Hashable {
-    private var recipes: [SoundEvent: SoundRecipe]
+    private var recipeVariants: [SoundEvent: [SoundRecipe]]
 
+    /// Compatibility initializer for themes with one recipe per event.
     public init(_ recipes: [SoundEvent: SoundRecipe]) {
-        self.recipes = recipes
+        self.recipeVariants = recipes.mapValues { [$0] }
     }
 
+    /// Initializes a set with optional per-event variants. The sound engine cycles
+    /// variants in declaration order; callers that need one sound can keep using
+    /// the unlabeled initializer above.
+    public init(variants: [SoundEvent: [SoundRecipe]]) {
+        self.recipeVariants = variants.filter { !$0.value.isEmpty }
+    }
+
+    /// The first variant, preserving the historic single-recipe API.
     public func recipe(for event: SoundEvent) -> SoundRecipe? {
-        recipes[event]
+        recipeVariants[event]?.first
     }
 
     public subscript(_ event: SoundEvent) -> SoundRecipe? {
-        recipes[event]
+        recipe(for: event)
+    }
+
+    /// All recipes available for an event, in deterministic round-robin order.
+    public func variants(for event: SoundEvent) -> [SoundRecipe] {
+        recipeVariants[event] ?? []
     }
 
     /// Events that have a recipe.
     public var events: [SoundEvent] {
-        SoundEvent.allCases.filter { recipes[$0] != nil }
+        SoundEvent.allCases.filter { !(recipeVariants[$0]?.isEmpty ?? true) }
     }
 }

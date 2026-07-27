@@ -17,13 +17,14 @@ public final class NullSoundPlayer: SoundPlaying, @unchecked Sendable {
     }
 
     public func play(_ event: SoundEvent) {}
+    public func updateSoundSet(_ soundSet: SoundSet) {}
 }
 
 // MARK: - Sound engine
 
-/// The real ``SoundPlaying``: `AVAudioEngine` + a fixed 3-voice player pool; all eight event
-/// buffers are synthesized once at init (deviation D1). `play` is O(1) with oldest-wins stealing
-/// (§4.5), starts lazily, rebuilds on device change, and never throws (missing/failure → no-op).
+/// The real ``SoundPlaying``: `AVAudioEngine` + a fixed 3-voice player pool. Every declared
+/// recipe variant is synthesized once at init or sound-set update. `play` is O(1) with oldest-wins
+/// stealing (§4.5), starts lazily, rebuilds on device change, and never throws (missing/failure → no-op).
 public final class SoundEngine: SoundPlaying, @unchecked Sendable {
 
     private static let log = Logger(subsystem: "com.ordo.sound", category: "SoundEngine")
@@ -34,7 +35,10 @@ public final class SoundEngine: SoundPlaying, @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let players: [AVAudioPlayerNode]
     private let format: AVAudioFormat
-    private let buffers: [SoundEvent: AVAudioPCMBuffer]
+    /// Touched only on `queue`; every event can have one or more round-robin buffers.
+    private var buffers: [SoundEvent: [AVAudioPCMBuffer]]
+    /// Next variant to use per event, also touched only on `queue`.
+    private var roundRobinIndices: [SoundEvent: Int] = [:]
     private let pool: VoicePool
     private let masterGain: Float
 
@@ -68,15 +72,8 @@ public final class SoundEngine: SoundPlaying, @unchecked Sendable {
             ?? AVAudioFormat(standardFormatWithSampleRate: RecipeRenderer.defaultSampleRate, channels: 1)!
         self.format = fmt
 
-        // Pre-render every event that has a recipe into a PCM buffer, once.
-        var built: [SoundEvent: AVAudioPCMBuffer] = [:]
-        for event in soundSet.events {
-            guard let recipe = soundSet[event] else { continue }
-            let rendered = RecipeRenderer.render(recipe, sampleRate: fmt.sampleRate)
-            guard let buffer = SoundEngine.makeBuffer(from: rendered, format: fmt) else { continue }
-            built[event] = buffer
-        }
-        self.buffers = built
+        // Pre-render every declared variant once. This does not start the audio device.
+        self.buffers = SoundEngine.makeBuffers(from: soundSet, format: fmt)
 
         // Build the graph (does NOT open the audio device — only start() does that).
         var nodes: [AVAudioPlayerNode] = []
@@ -114,17 +111,17 @@ public final class SoundEngine: SoundPlaying, @unchecked Sendable {
     public func play(_ event: SoundEvent) {
         stateLock.lock(); let on = _isEnabled; stateLock.unlock()
         guard on else { return }
-        guard let buffer = buffers[event] else { return } // missing recipe → silent no-op
 
         queue.async { [weak self] in
             guard let self else { return }
+            guard let selection = self.nextBuffer(for: event) else { return } // missing recipe → silent no-op
             guard self.startIfNeeded() else { return }
 
             let lease = self.pool.acquire()
             let player = self.players[lease.index]
             if lease.stole { player.stop() }
 
-            player.scheduleBuffer(buffer, at: nil, options: .interrupts,
+            player.scheduleBuffer(selection.buffer, at: nil, options: .interrupts,
                                   completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 self?.queue.async {
                     self?.pool.release(index: lease.index, generation: lease.generation)
@@ -132,6 +129,30 @@ public final class SoundEngine: SoundPlaying, @unchecked Sendable {
             }
             if !player.isPlaying { player.play() }
         }
+    }
+
+    /// Re-renders all variants and atomically adopts them for subsequent plays. The
+    /// existing graph, enabled state, and in-flight voices are deliberately retained.
+    public func updateSoundSet(_ soundSet: SoundSet) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.buffers = SoundEngine.makeBuffers(from: soundSet, format: self.format)
+            self.roundRobinIndices.removeAll(keepingCapacity: true)
+        }
+    }
+
+    // MARK: Test seams
+
+    /// Number of successfully rendered variants currently available for an event.
+    /// Internal so hardware-independent tests can verify live changes and cycling.
+    func variantCount(for event: SoundEvent) -> Int {
+        queue.sync { buffers[event]?.count ?? 0 }
+    }
+
+    /// Advances the same deterministic round-robin state used by `play`, without
+    /// scheduling hardware playback. This keeps round-robin tests CI-safe.
+    func selectNextVariantForTesting(_ event: SoundEvent) -> Int? {
+        queue.sync { nextBuffer(for: event)?.index }
     }
 
     // MARK: Engine lifecycle (all on `queue`)
@@ -168,6 +189,14 @@ public final class SoundEngine: SoundPlaying, @unchecked Sendable {
         }
     }
 
+    /// Selects an event buffer in declaration order. Must be called on `queue`.
+    private func nextBuffer(for event: SoundEvent) -> (buffer: AVAudioPCMBuffer, index: Int)? {
+        guard let variants = buffers[event], !variants.isEmpty else { return nil }
+        let current = roundRobinIndices[event, default: 0] % variants.count
+        roundRobinIndices[event] = (current + 1) % variants.count
+        return (variants[current], current)
+    }
+
     // MARK: Buffer construction
 
     private static func makeBuffer(from rendered: RenderedSound, format: AVAudioFormat) -> AVAudioPCMBuffer? {
@@ -185,5 +214,17 @@ public final class SoundEngine: SoundPlaying, @unchecked Sendable {
             }
         }
         return buffer
+    }
+
+    private static func makeBuffers(from soundSet: SoundSet, format: AVAudioFormat) -> [SoundEvent: [AVAudioPCMBuffer]] {
+        var built: [SoundEvent: [AVAudioPCMBuffer]] = [:]
+        for event in soundSet.events {
+            let variants = soundSet.variants(for: event).compactMap { recipe -> AVAudioPCMBuffer? in
+                let rendered = RecipeRenderer.render(recipe, sampleRate: format.sampleRate)
+                return makeBuffer(from: rendered, format: format)
+            }
+            if !variants.isEmpty { built[event] = variants }
+        }
+        return built
     }
 }

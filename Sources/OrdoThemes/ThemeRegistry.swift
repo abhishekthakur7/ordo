@@ -1,6 +1,6 @@
 import Foundation
 
-/// The catalog of available themes. V1 ships macOS and Arcade; the three remaining
+/// The catalog of available themes. V1 ships macOS, Arcade, and Zen Ink; the remaining
 /// `ThemeID` cases are reserved and drop in by appending to `all` — no call site changes.
 public struct ThemeRegistry: Sendable {
 
@@ -17,7 +17,7 @@ public struct ThemeRegistry: Sendable {
 
     /// The shipping registry.
     public static let shared = ThemeRegistry(
-        all: [MacOSTheme(), ArcadeTheme()],
+        all: [MacOSTheme(), ArcadeTheme(), ZenInkTheme()],
         defaultTheme: MacOSTheme()
     )
 

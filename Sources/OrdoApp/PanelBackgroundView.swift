@@ -17,7 +17,10 @@ final class PanelBackgroundView: NSView {
     /// corner samples only partway through the ramp, not at full opacity.
     private static let vignetteCornerOversize: CGFloat = 1.2 * (CGFloat(2).squareRoot() / 2)
 
-    private let metrics: ThemeMetrics
+    /// Geometry is theme-owned and can change while the long-lived panel window is
+    /// on screen (for example, macOS's 26pt notch inset → Arcade's 44pt inset).
+    /// Keep the current value rather than the launch-time value supplied to `init`.
+    private var metrics: ThemeMetrics
 
     // The card (clipped, rounded) and its layered surface.
     private let shadowHost = NSView()
@@ -31,14 +34,26 @@ final class PanelBackgroundView: NSView {
     private let flatView = NSView()
     private let tintView = NSView()
     private let sheenView = NSView()
+    /// Paper-only 1pt inset highlight. It is a single retained view so repeated
+    /// appearance/theme swaps do not grow the card's layer tree.
+    private let innerHighlightView = NSView()
     private let beak = NSView()
-    /// Cabinet-only CRT/LCD overlay, layered above the hosting view, clipped to the
-    /// card's rounded rect (inherited from `card.layer.masksToBounds`), and mouse-transparent.
+    /// Surface overlay host, layered above the hosting view, clipped to the card's
+    /// rounded rect (inherited from `card.layer.masksToBounds`), and mouse-transparent.
     private let overlayView = PassThroughOverlayView()
     private let overlayScanlineReplicator = CAReplicatorLayer()
     private let overlayScanlineTile = CALayer()
     private let overlayRadialLayer = CAGradientLayer()
     private var overlayScanlinePitch: CGFloat = 3
+    /// The paper overlay is a retained two-axis replicator rather than a new image
+    /// for every resize. `paperGrainTile` is one scale-correct CGImage; the two
+    /// replicators repeat it across the panel without stretching it.
+    private let paperGrainReplicator = CAReplicatorLayer()
+    private let paperGrainRows = CAReplicatorLayer()
+    private let paperGrainTile = CALayer()
+    private var paperGrainStyle: GrainStyle?
+    private var paperGrainCache: [PaperGrainCacheKey: CGImage] = [:]
+    private var appliedPaperGrainKey: PaperGrainCacheKey?
 
     /// The card's current corner radius (mirrors `card.layer.cornerRadius`, which is
     /// re-derived from the palette on every `apply(palette:)` rather than the possibly
@@ -47,6 +62,15 @@ final class PanelBackgroundView: NSView {
     /// The beak/notch's current corner radius: rounded for the macOS glass beak (3pt),
     /// sharp for the arcade cabinet's square notch (0pt).
     private var beakCornerRadius: CGFloat = 3
+
+    /// `appearanceBlend` is part of the key even though the tile is grayscale: it
+    /// marks the light/dark art direction and keeps image cache semantics aligned
+    /// with the palette's appearance-specific compositing choice.
+    private struct PaperGrainCacheKey: Hashable {
+        let tilePixels: Int
+        let scaleMilli: Int
+        let appearanceBlend: GrainStyle.Blend
+    }
 
     /// The SwiftUI hosting view, inserted by the controller (kept clipped to the card).
     var hostingView: NSView? {
@@ -84,6 +108,7 @@ final class PanelBackgroundView: NSView {
         flatView.wantsLayer = true
         tintView.wantsLayer = true
         sheenView.wantsLayer = true
+        innerHighlightView.wantsLayer = true
 
         beak.wantsLayer = true
         beak.layer?.masksToBounds = true
@@ -96,6 +121,9 @@ final class PanelBackgroundView: NSView {
         overlayView.layer?.addSublayer(overlayScanlineReplicator)
         overlayRadialLayer.type = .radial
         overlayView.layer?.addSublayer(overlayRadialLayer)
+        paperGrainRows.addSublayer(paperGrainTile)
+        paperGrainReplicator.addSublayer(paperGrainRows)
+        overlayView.layer?.addSublayer(paperGrainReplicator)
         card.addSubview(overlayView)
     }
 
@@ -105,26 +133,39 @@ final class PanelBackgroundView: NSView {
 
     // MARK: Palette application
 
-    func apply(palette: Palette) {
+    /// Re-applies both visual tokens and geometry to the persistent panel view.
+    /// This is intentionally separate from window creation: themes can be swapped
+    /// while the panel is visible and its beak must move immediately.
+    func apply(palette: Palette, metrics: ThemeMetrics) {
+        self.metrics = metrics
         currentPalette = palette
 
+        let overlay: SurfaceOverlay
         switch palette.surface {
         case .vibrancy(let material):
             applyVibrancySurface(material: material, palette: palette)
+            overlay = .none
         case .cabinet(let cab):
             applyCabinetSurface(cab)
+            overlay = .cabinet(cab.overlay)
+        case .paper(let paper):
+            applyPaperSurface(paper)
+            overlay = .paper(grain: paper.grain)
         }
 
         if let h = hostingView { card.addSubview(h) }
-        if case .cabinet(let cab) = palette.surface {
-            overlayView.isHidden = false
-            card.addSubview(overlayView)
-            applyOverlay(cab.overlay)
-        } else {
-            overlayView.isHidden = true
-        }
+        overlayView.isHidden = false
+        card.addSubview(overlayView)
+        applyOverlay(overlay)
 
         needsLayout = true
+        layoutSubtreeIfNeeded()
+    }
+
+    /// Compatibility entry point for callers that only change palette values.
+    /// New live-theme callers should pass the theme metrics explicitly above.
+    func apply(palette: Palette) {
+        apply(palette: palette, metrics: metrics)
     }
 
     // MARK: Vibrancy surface (macOS glass)
@@ -137,7 +178,7 @@ final class PanelBackgroundView: NSView {
             effectView?.removeFromSuperview()
             effectView = nil
             if flatView.superview == nil { card.addSubview(flatView, positioned: .below, relativeTo: nil) }
-            flatView.layer?.backgroundColor = NSColor(material.fallbackOpaque).cgColor
+            applyFlatFill(NSColor(material.fallbackOpaque))
             tintView.isHidden = true
             sheenView.isHidden = true
         } else {
@@ -178,6 +219,8 @@ final class PanelBackgroundView: NSView {
         beak.layer?.borderWidth = palette.hairlineWidth
         beak.layer?.borderColor = NSColor(palette.panelHairline).cgColor
         beakCornerRadius = 3
+        innerHighlightView.isHidden = true
+        paperGrainStyle = nil
     }
 
     // MARK: Cabinet surface (Arcade) — opaque plastic, hard shadow, CRT/LCD overlay.
@@ -190,7 +233,7 @@ final class PanelBackgroundView: NSView {
 
         if flatView.superview == nil { card.addSubview(flatView, positioned: .below, relativeTo: nil) }
         flatView.isHidden = false
-        flatView.layer?.backgroundColor = NSColor(cab.fill).cgColor
+        applyFlatFill(NSColor(cab.fill))
 
         sheenView.isHidden = false
         if sheenView.superview == nil { card.addSubview(sheenView) }
@@ -207,18 +250,105 @@ final class PanelBackgroundView: NSView {
         beak.layer?.borderWidth = CGFloat(cab.borderWidth)
         beak.layer?.borderColor = NSColor(cab.border).cgColor
         beakCornerRadius = 0
+        innerHighlightView.isHidden = true
+        paperGrainStyle = nil
     }
 
-    // MARK: CRT / LCD overlay (cabinet only)
+    // MARK: Paper surface (Zen Ink)
 
-    /// Configures the static (non-animated) scanline + radial layers from the
-    /// palette's `OverlayStyle`. Reduce-Transparency softening is applied
-    /// upstream at the theme layer, not here.
-    private func applyOverlay(_ overlay: OverlayStyle) {
+    private func applyPaperSurface(_ paper: PaperStyle) {
+        effectView?.removeFromSuperview()
+        effectView = nil
+        tintView.isHidden = true
+        tintView.removeFromSuperview()
+        sheenView.isHidden = true
+        sheenView.removeFromSuperview()
+
+        if flatView.superview == nil { card.addSubview(flatView, positioned: .below, relativeTo: nil) }
+        flatView.isHidden = false
+        applyFlatGradient(top: NSColor(paper.fillTop), bottom: NSColor(paper.fillBottom))
+
+        cardCornerRadius = CGFloat(paper.cornerRadius)
+        card.layer?.cornerRadius = cardCornerRadius
+        card.layer?.borderWidth = CGFloat(paper.borderWidth)
+        card.layer?.borderColor = NSColor(paper.border).cgColor
+        applyShadow(paper.shadow)
+
+        if innerHighlightView.superview == nil { card.addSubview(innerHighlightView) }
+        innerHighlightView.isHidden = false
+        innerHighlightView.layer?.backgroundColor = NSColor(paper.innerHighlight).cgColor
+
+        beak.layer?.backgroundColor = NSColor(paper.fillTop).cgColor
+        beak.layer?.borderWidth = CGFloat(paper.borderWidth)
+        beak.layer?.borderColor = NSColor(paper.border).cgColor
+        beakCornerRadius = CGFloat(paper.beakCornerRadius)
+        paperGrainStyle = paper.grain
+    }
+
+    /// Restores a plain backing layer after a paper gradient, so an old gradient
+    /// cannot survive a live paper → macOS/Arcade swap.
+    private func applyFlatFill(_ color: NSColor) {
+        if flatView.layer is CAGradientLayer {
+            let layer = CALayer()
+            layer.frame = flatView.bounds
+            flatView.layer = layer
+        }
+        flatView.layer?.backgroundColor = color.cgColor
+    }
+
+    private func applyFlatGradient(top: NSColor, bottom: NSColor) {
+        let gradient: CAGradientLayer
+        if let existing = flatView.layer as? CAGradientLayer {
+            gradient = existing
+        } else {
+            gradient = CAGradientLayer()
+            gradient.frame = flatView.bounds
+            flatView.layer = gradient
+        }
+        gradient.colors = [top.cgColor, bottom.cgColor]
+        gradient.locations = [0, 1]
+        gradient.startPoint = CGPoint(x: 0.5, y: 1.0) // top in the non-flipped layer
+        gradient.endPoint = CGPoint(x: 0.5, y: 0.0)
+    }
+
+    // MARK: Surface overlays
+
+    /// Surface ownership is explicit so switching among paper, glass, and cabinet
+    /// always clears the visual treatment belonging to the previous surface.
+    private enum SurfaceOverlay {
+        case none
+        case cabinet(OverlayStyle)
+        case paper(grain: GrainStyle)
+    }
+
+    /// Configures the static (non-animated) cabinet or paper treatment. The
+    /// theme has already applied accessibility choices to these values.
+    private func applyOverlay(_ overlay: SurfaceOverlay) {
+        switch overlay {
+        case .none:
+            resetCabinetOverlay()
+            resetPaperGrain()
+            overlayView.isHidden = true
+
+        case .cabinet(let cabinet):
+            resetPaperGrain()
+            overlayView.isHidden = false
+            applyCabinetOverlay(cabinet)
+
+        case .paper(let grain):
+            resetCabinetOverlay()
+            overlayView.isHidden = grain.opacity <= 0 || grain.tile <= 0
+            applyPaperGrain(grain)
+        }
+        needsLayout = true
+    }
+
+    /// Existing CRT/LCD behavior is kept intact, but is now scoped to the
+    /// cabinet branch of `SurfaceOverlay` rather than sharing a paper no-op.
+    private func applyCabinetOverlay(_ overlay: OverlayStyle) {
         switch overlay.kind {
         case .none:
-            overlayScanlineReplicator.isHidden = true
-            overlayRadialLayer.isHidden = true
+            resetCabinetOverlay()
 
         case .scanlines:
             overlayScanlineReplicator.isHidden = false
@@ -247,8 +377,140 @@ final class PanelBackgroundView: NSView {
             overlayRadialLayer.locations = [0.70, 1.0]
             overlayRadialLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
             overlayRadialLayer.endPoint = CGPoint(x: 1.0, y: 1.0)
+
+        case .paperGrain:
+            // `OverlayStyle.paperGrain` remains a valid neutral descriptor for
+            // callers outside this view. Paper itself uses the richer GrainStyle.
+            resetCabinetOverlay()
         }
-        needsLayout = true
+    }
+
+    private func resetCabinetOverlay() {
+        overlayScanlineReplicator.isHidden = true
+        overlayScanlineReplicator.opacity = 1
+        overlayRadialLayer.isHidden = true
+        overlayRadialLayer.compositingFilter = nil
+    }
+
+    private func applyPaperGrain(_ grain: GrainStyle) {
+        paperGrainStyle = grain
+        guard grain.opacity > 0, grain.tile > 0 else {
+            resetPaperGrain()
+            return
+        }
+
+        paperGrainReplicator.isHidden = false
+        paperGrainReplicator.opacity = Float(grain.opacity)
+        paperGrainReplicator.compositingFilter = Self.compositingFilter(for: grain.blend)
+        updatePaperGrainImageIfNeeded()
+    }
+
+    private func resetPaperGrain() {
+        paperGrainReplicator.isHidden = true
+        paperGrainReplicator.opacity = 1
+        paperGrainReplicator.compositingFilter = nil
+        paperGrainTile.contents = nil
+        appliedPaperGrainKey = nil
+        paperGrainStyle = nil
+    }
+
+    private static func compositingFilter(for blend: GrainStyle.Blend) -> String {
+        switch blend {
+        case .multiply: return "multiplyBlendMode"
+        case .overlay: return "overlayBlendMode"
+        }
+    }
+
+    /// Reuses the image while the tile, active appearance treatment, and backing
+    /// scale are unchanged. Calling this from layout is therefore geometry-only on
+    /// ordinary frames; the small CPU noise pass happens only when that key changes.
+    private func updatePaperGrainImageIfNeeded() {
+        guard let grain = paperGrainStyle, grain.opacity > 0, grain.tile > 0 else { return }
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+        let tilePixels = max(Int((CGFloat(grain.tile) * scale).rounded()), 1)
+        let key = PaperGrainCacheKey(
+            tilePixels: tilePixels,
+            scaleMilli: Int((scale * 1_000).rounded()),
+            appearanceBlend: grain.blend
+        )
+
+        if appliedPaperGrainKey != key {
+            let image: CGImage
+            if let cached = paperGrainCache[key] {
+                image = cached
+            } else {
+                image = Self.makePaperGrainImage(side: tilePixels, blend: grain.blend)
+                // A panel only normally sees light/dark at one or two display
+                // scales. Bound the cache anyway so arbitrary live theme previews
+                // cannot retain an unbounded collection of CGImage tiles.
+                if paperGrainCache.count >= 8 { paperGrainCache.removeAll(keepingCapacity: true) }
+                paperGrainCache[key] = image
+            }
+            paperGrainTile.contents = image
+            paperGrainTile.contentsScale = scale
+            appliedPaperGrainKey = key
+        }
+        layoutPaperGrainReplicator(tile: CGFloat(grain.tile), scale: scale)
+    }
+
+    /// Generates a stable washi-like grayscale tile from integer coordinate noise.
+    /// It intentionally uses no system RNG: the same theme, tile, and scale always
+    /// produce identical bytes, including across launches.
+    private static func makePaperGrainImage(side: Int, blend: GrainStyle.Blend) -> CGImage {
+        let seed: UInt64 = blend == .multiply ? 0xD1B5_4A32_D192_ED03 : 0x94D0_49BB_1331_11EB
+        var bytes = [UInt8](repeating: 0, count: side * side)
+        for y in 0..<side {
+            for x in 0..<side {
+                let coordinate = UInt64(x) &* 0x9E37_79B1 ^ UInt64(y) &* 0x85EB_CA77
+                let fine = Self.mixedNoise(seed ^ coordinate)
+                // A second low-frequency sample keeps the tile from reading like
+                // digital TV static while preserving a neutral mid-gray average.
+                let coarse = Self.mixedNoise(seed ^ UInt64(x / 7) &* 0xC2B2_AE3D ^ UInt64(y / 7) &* 0x27D4_EB2F)
+                let variation = Int((fine & 0x3F) + (coarse & 0x1F)) - 47
+                bytes[y * side + x] = UInt8(clamping: 128 + variation)
+            }
+        }
+
+        let data = Data(bytes) as CFData
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        let provider = CGDataProvider(data: data)!
+        return CGImage(
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bitsPerPixel: 8,
+            bytesPerRow: side,
+            space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )!
+    }
+
+    private static func mixedNoise(_ value: UInt64) -> UInt64 {
+        var value = value
+        value ^= value >> 30
+        value &*= 0xBF58_476D_1CE4_E5B9
+        value ^= value >> 27
+        value &*= 0x94D0_49BB_1331_11EB
+        value ^= value >> 31
+        return value
+    }
+
+    private func layoutPaperGrainReplicator(tile: CGFloat, scale: CGFloat) {
+        let bounds = overlayView.bounds
+        guard bounds.width > 0, bounds.height > 0, tile > 0 else { return }
+        paperGrainReplicator.frame = bounds
+        paperGrainReplicator.contentsScale = scale
+        paperGrainRows.frame = CGRect(x: 0, y: 0, width: tile, height: bounds.height)
+        paperGrainRows.contentsScale = scale
+        paperGrainRows.instanceCount = Int(ceil(bounds.height / tile))
+        paperGrainRows.instanceTransform = CATransform3DMakeTranslation(0, tile, 0)
+        paperGrainTile.frame = CGRect(x: 0, y: 0, width: tile, height: tile)
+        paperGrainReplicator.instanceCount = Int(ceil(bounds.width / tile))
+        paperGrainReplicator.instanceTransform = CATransform3DMakeTranslation(tile, 0, 0)
     }
 
     private func applySheenGradient(topColor: Color, extent: Double) {
@@ -310,11 +572,13 @@ final class PanelBackgroundView: NSView {
         tintView.frame = card.bounds
         sheenView.frame = card.bounds
         (sheenView.layer as? CAGradientLayer)?.frame = sheenView.bounds
+        innerHighlightView.frame = NSRect(x: 0, y: max(card.bounds.height - 1, 0), width: card.bounds.width, height: 1)
         hostingView?.frame = card.bounds
 
         overlayView.frame = card.bounds
         overlayRadialLayer.frame = overlayView.bounds
         layoutScanlineReplicator()
+        updatePaperGrainImageIfNeeded()
 
         // Each shadow-backing view sits exactly on the card and casts through a rounded
         // silhouette matching the panel corners.

@@ -50,8 +50,7 @@ struct SettingsView: View {
 
     private var themeSection: some View {
         HStack {
-            theme.typeScale.railLine.styled(UIStrings.themeTitle)
-                .foregroundStyle(palette.ink)
+            settingsLabel(UIStrings.themeTitle)
             Spacer()
             Picker("", selection: themeBinding) {
                 ForEach(ThemeRegistry.shared.all, id: \.id) { available in
@@ -76,16 +75,13 @@ struct SettingsView: View {
     private var launchAtLogin: some View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle(isOn: launchBinding) {
-                theme.typeScale.railLine.styled(UIStrings.launchAtLogin)
-                    .foregroundStyle(palette.ink)
+                settingsLabel(UIStrings.launchAtLogin)
             }
             .toggleStyle(.switch)
             .tint(palette.accent)
 
             if !model.settings.launchAtLoginConsented {
-                theme.typeScale.emptyBody.styled(UIStrings.launchAtLoginConsent)
-                    .foregroundStyle(palette.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                settingsHelp(UIStrings.launchAtLoginConsent)
             }
         }
     }
@@ -104,8 +100,7 @@ struct SettingsView: View {
 
     private var hotkeySection: some View {
         HStack {
-            theme.typeScale.railLine.styled(UIStrings.summonHotkey)
-                .foregroundStyle(palette.ink)
+            settingsLabel(UIStrings.summonHotkey)
             Spacer()
             HotkeyRecorderField(binding: hotkeyBinding)
         }
@@ -123,8 +118,7 @@ struct SettingsView: View {
     private var dayStartSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                theme.typeScale.railLine.styled(UIStrings.dayStartTitle)
-                    .foregroundStyle(palette.ink)
+                settingsLabel(UIStrings.dayStartTitle)
                 Spacer()
                 Picker("", selection: dayStartBinding) {
                     ForEach(0..<24, id: \.self) { hour in
@@ -135,10 +129,22 @@ struct SettingsView: View {
                 .fixedSize()
                 .tint(palette.accent)
             }
-            theme.typeScale.emptyBody.styled(UIStrings.dayStartHelp)
-                .foregroundStyle(palette.ink2)
-                .fixedSize(horizontal: false, vertical: true)
+            settingsHelp(UIStrings.dayStartHelp)
         }
+    }
+
+    /// Settings has no bespoke mockup. Use the generic body role so Zen's
+    /// mincho heading is paired with its gothic explanatory copy, while the
+    /// existing themes retain their own body tokens.
+    private func settingsLabel(_ text: String) -> some View {
+        theme.typeScale.date.styled(text)
+            .foregroundStyle(palette.ink)
+    }
+
+    private func settingsHelp(_ text: String) -> some View {
+        theme.typeScale.date.styled(text)
+            .foregroundStyle(palette.ink2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var dayStartBinding: Binding<Int> {

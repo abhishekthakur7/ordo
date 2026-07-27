@@ -62,6 +62,7 @@ public enum RecipeRenderer {
             case .oscillator(let o): renderOscillator(o, into: &buf, sampleRate: sr)
             case .marimba(let m): renderMarimba(m, into: &buf, sampleRate: sr)
             case .noise(let noise): renderNoise(noise, into: &buf, sampleRate: sr)
+            case .pluck(let pluck): renderPluck(pluck, into: &buf, sampleRate: sr)
             }
         }
 
@@ -189,6 +190,68 @@ public enum RecipeRenderer {
             if idx >= 0 && idx < buf.count { buf[idx] += env * filtered }
         }
     }
+
+    /// Zen Ink's koto pluck. Its three partials intentionally have different decay
+    /// times, so the higher inharmonic content disappears first as on a real string.
+    private static func renderPluck(_ pluck: Pluck, into buf: inout [Double], sampleRate sr: Double) {
+        let start = Int((pluck.startDelay * sr).rounded())
+        let duration = max(0, pluck.duration)
+        let partials: [(wave: Waveform, multiplier: Double, gain: Double)] = [
+            (.triangle, 1, 1),
+            (.sine, pluck.secondPartialRatio, pluck.secondPartialGain),
+            (.sine, pluck.thirdPartialRatio, pluck.thirdPartialGain),
+        ]
+        let partialDurations = partials.map {
+            duration * max(0, 1 - pluck.partialDecayPerMultiplier * ($0.multiplier - 1))
+        }
+        let soundingDuration = max(duration, max(0, pluck.pickDuration))
+        let count = Int((soundingDuration * sr).rounded())
+        guard count > 0 else { return }
+
+        var lowpass = Biquad()
+        var highpass = Biquad()
+        highpass.setHighpass(freq: pluck.pickHighpass, qDB: 1.0, sampleRate: sr)
+        var rng = SplitMix64(seed: pluck.seed)
+        var phases = Array(repeating: 0.0, count: partials.count)
+        let sweep = max(pluck.lowpassSweepDuration, 1e-6)
+
+        for i in 0..<count {
+            let index = start + i
+            if index < 0 { continue }
+            if index >= buf.count { break }
+            let time = Double(i) / sr
+            let cutoff = expRamp(pluck.lowpassStart, pluck.lowpassEnd, min(1, time / sweep))
+            lowpass.setLowpass(freq: cutoff, qDB: 1.0, sampleRate: sr)
+
+            var string = 0.0
+            for partialIndex in partials.indices {
+                let partial = partials[partialIndex]
+                let partialDuration = partialDurations[partialIndex]
+                if partialDuration > 0 {
+                    let envelope = envelope(
+                        ts: time,
+                        attack: pluck.attack,
+                        decayEnd: partialDuration,
+                        peak: pluck.peakGain * partial.gain
+                    )
+                    string += envelope * wave(partial.wave, phase: phases[partialIndex])
+                }
+                phases[partialIndex] += (pluck.frequency * partial.multiplier) / sr
+            }
+
+            var pick = 0.0
+            if time <= pluck.pickDuration {
+                let pickEnvelope = envelope(
+                    ts: time,
+                    attack: pluck.pickAttack,
+                    decayEnd: max(0, pluck.pickDuration),
+                    peak: pluck.pickGain
+                )
+                pick = pickEnvelope * highpass.process(rng.nextUnit() * 2 - 1)
+            }
+            buf[index] += lowpass.process(string) + pick
+        }
+    }
 }
 
 // MARK: - RBJ biquad (matches WebAudio BiquadFilterNode coefficient math)
@@ -234,6 +297,19 @@ struct Biquad {
         a2 = (1 - alpha) / a0
     }
 
+    /// Highpass. WebAudio interprets Q in decibels for low/high-pass filters.
+    mutating func setHighpass(freq: Double, qDB: Double, sampleRate sr: Double) {
+        let w0 = 2 * Double.pi * clampFreq(freq, sr) / sr
+        let cw = cos(w0), sw = sin(w0)
+        let alpha = sw / (2 * pow(10, qDB / 20))
+        let a0 = 1 + alpha
+        b0 = ((1 + cw) / 2) / a0
+        b1 = (-(1 + cw)) / a0
+        b2 = ((1 + cw) / 2) / a0
+        a1 = (-2 * cw) / a0
+        a2 = (1 - alpha) / a0
+    }
+
     @inline(__always)
     private func clampFreq(_ f: Double, _ sr: Double) -> Double {
         min(max(f, 10), sr * 0.45)
@@ -269,6 +345,24 @@ private extension NoiseSwoosh {
     var seed: UInt64 {
         var h: UInt64 = 0xD1CE4E5B9F4A7C15
         for value in [bandpassStart, bandpassEnd, duration, peakGain, q, startDelay] {
+            h ^= value.bitPattern
+            h = h &* 0x100000001B3
+        }
+        return h == 0 ? 0x9E3779B97F4A7C15 : h
+    }
+}
+
+private extension Pluck {
+    /// Stable seed derived from the pluck parameters, including pitch, so each note
+    /// has a reproducible but distinct pick transient.
+    var seed: UInt64 {
+        var h: UInt64 = 0xB10C0FEE5EED1234
+        for value in [
+            frequency, peakGain, duration, startDelay,
+            secondPartialRatio, secondPartialGain, thirdPartialRatio, thirdPartialGain,
+            partialDecayPerMultiplier, lowpassStart, lowpassEnd, lowpassSweepDuration,
+            pickHighpass, pickGain, pickDuration, pickAttack,
+        ] {
             h ^= value.bitPattern
             h = h &* 0x100000001B3
         }

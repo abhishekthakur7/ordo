@@ -14,14 +14,14 @@ struct ComposerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: theme.layout.composerStackSpacing) {
             if let pending = model.pendingPaste {
                 pasteConfirm(pending)
                     .transition(.opacity)
             }
             field
         }
-        .padding(EdgeInsets(top: 8, leading: 14, bottom: 10, trailing: 14))
+        .padding(theme.layout.composerInsets.edgeInsets)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(palette.divider)
@@ -31,8 +31,21 @@ struct ComposerView: View {
 
     // MARK: Field
 
+    @ViewBuilder
     private var field: some View {
-        HStack(spacing: 9) {
+        switch theme.composerStyle {
+        case .ink:
+            inkField
+        case .card, .cabinet:
+            cardField
+        }
+    }
+
+    /// The existing macOS card and Arcade cabinet field share their original
+    /// composition; the values now come from `ThemeLayout` so legacy remains
+    /// pixel-identical while new themes can opt into a different wrapper.
+    private var cardField: some View {
+        HStack(spacing: theme.layout.composerFieldSpacing) {
             StrokeIcon(systemName: "plus", size: 16, weight: .medium)
                 .foregroundStyle(theme.usesCabinetControls ? palette.accent : palette.ink3)
 
@@ -60,9 +73,8 @@ struct ComposerView: View {
 
             addButton
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
-        .frame(minHeight: 40)
+        .padding(theme.layout.composerFieldInsets.edgeInsets)
+        .frame(minHeight: CGFloat(theme.layout.composerFieldMinimumHeight))
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(palette.fieldBackground)
@@ -82,9 +94,51 @@ struct ComposerView: View {
         .animation(theme.motion.counterFade.animation(reduceMotion: reduceMotion), value: model.showCharacterCounter)
     }
 
+    /// Zen Ink's deliberately unboxed composer: the plus remains a keyboard-
+    /// equivalent submit target, but has no filled button chrome.
+    private var inkField: some View {
+        HStack(alignment: .bottom, spacing: theme.layout.composerFieldSpacing) {
+            Button(action: submit) {
+                SumiPlusShape()
+                    .stroke(palette.inkFaint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .frame(width: 19, height: 19)
+                    .frame(width: 22, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(!model.canAdd)
+            .accessibilityLabel("Add task")
+            .accessibilityValue(model.canAdd ? "ready" : "empty")
+
+            ZStack(alignment: .leading) {
+                if model.composerText.isEmpty {
+                    theme.typeScale.field.styled(theme.composerPlaceholder(isToday: model.tab == .today) ?? UIStrings.composerPlaceholder)
+                        .italic()
+                        .foregroundStyle(palette.inkFaint)
+                }
+                TextField("", text: $model.composerText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...4)
+                    .typeToken(theme.typeScale.field)
+                    .foregroundStyle(palette.ink)
+                    .focused(focus, equals: .composer)
+                    .onSubmit { submit() }
+                    .accessibilityLabel("New task")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Rectangle()
+                .fill(focusedField ? palette.accent : palette.fieldLine)
+                .frame(width: focusedField ? 42 : 30, height: palette.hairlineWidth)
+                .padding(.bottom, 8)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: focusedField)
+        }
+        .padding(theme.layout.composerFieldInsets.edgeInsets)
+        .frame(minHeight: CGFloat(theme.layout.composerFieldMinimumHeight))
+    }
+
     @ViewBuilder
     private var addButton: some View {
-        if theme.usesCabinetControls {
+        if theme.composerStyle == .cabinet {
             arcadeAddButton
         } else {
             macOSAddButton
@@ -165,5 +219,13 @@ struct ComposerView: View {
         withAnimation(theme.motion.rowEntrance.animation(reduceMotion: reduceMotion)) {
             model.submitComposer()
         }
+    }
+}
+
+/// Keep the design-system layout token platform-neutral while allowing shared
+/// SwiftUI views to consume it directly.
+extension ThemeInsets {
+    var edgeInsets: EdgeInsets {
+        EdgeInsets(top: top, leading: leading, bottom: bottom, trailing: trailing)
     }
 }

@@ -109,4 +109,51 @@ final class AppModelTests: UIModelTestCase {
         XCTAssertEqual(model.longtermRemaining, 1)
         XCTAssertTrue(sounds.played.contains(.tabSwitch))
     }
+
+    // MARK: Cleared-state peek
+
+    func testClearedPeekDefaultsFalseAndResetsOnPanelOpenAndTabSelection() {
+        let model = makeModel(store: makeStore())
+        XCTAssertFalse(model.clearedPeek)
+
+        model.clearedPeek = true
+        model.panelWillOpen()
+        XCTAssertFalse(model.clearedPeek)
+
+        model.clearedPeek = true
+        model.selectTab(.longterm)
+        XCTAssertFalse(model.clearedPeek)
+    }
+
+    func testClearedPeekResetsAfterSuccessfulComposerSubmission() {
+        let model = makeModel(store: makeStore())
+        model.clearedPeek = true
+        model.composerText = "A fresh task"
+
+        model.submitComposer()
+
+        XCTAssertFalse(model.clearedPeek)
+        XCTAssertEqual(model.openToday.map(\.title), ["A fresh task"])
+    }
+
+    func testClearedPeekResetsForBothCompletionDirections() {
+        let model = makeModel(store: makeStore())
+        model.composerText = "Task"
+        model.submitComposer()
+        let id = try! XCTUnwrap(model.openToday.first?.id)
+
+        model.clearedPeek = true
+        model.toggle(id)
+        XCTAssertFalse(model.clearedPeek)
+        scheduler.fireAll()
+        XCTAssertTrue(model.isAllClearedToday)
+
+        // A fixture may set the transient flag directly after seeding an
+        // all-cleared store; unchecking must invalidate that snapshot as well.
+        model.clearedPeek = true
+        model.toggle(id)
+        XCTAssertFalse(model.clearedPeek)
+        scheduler.fireAll()
+        XCTAssertFalse(model.isAllClearedToday)
+    }
 }

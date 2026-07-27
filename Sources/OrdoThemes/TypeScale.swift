@@ -6,6 +6,9 @@ import SwiftUI
 public enum FontFamily: Sendable, Hashable {
     case system
     case named(String)
+    /// Resolves one exact PostScript face without synthesizing a weight.
+    /// This is required for static multi-weight font families such as Zen Ink's.
+    case postScript(String)
 }
 
 /// One typographic role: size, weight, letter-spacing, line-height and digit style.
@@ -22,6 +25,8 @@ public struct TypeToken: Sendable, Hashable {
     public var monospacedDigit: Bool
     /// Whether the text should render uppercased (CSS `text-transform: uppercase`).
     public var uppercase: Bool
+    /// Whether the text should render with an italic face or synthesized italic.
+    public var italic: Bool
     /// Which font face to resolve `font` to. Defaults to `.system` (SF Pro).
     public var fontFamily: FontFamily
 
@@ -32,6 +37,7 @@ public struct TypeToken: Sendable, Hashable {
         lineHeightMultiple: Double = 1.2,
         monospacedDigit: Bool = false,
         uppercase: Bool = false,
+        italic: Bool = false,
         fontFamily: FontFamily = .system
     ) {
         self.size = size
@@ -40,6 +46,7 @@ public struct TypeToken: Sendable, Hashable {
         self.lineHeightMultiple = lineHeightMultiple
         self.monospacedDigit = monospacedDigit
         self.uppercase = uppercase
+        self.italic = italic
         self.fontFamily = fontFamily
     }
 
@@ -49,8 +56,10 @@ public struct TypeToken: Sendable, Hashable {
     /// Extra leading for `.lineSpacing(_:)` (SwiftUI adds this *between* lines).
     public var lineSpacing: Double { max(0, size * (lineHeightMultiple - 1)) }
 
-    /// The font for this role, digit style applied. Resolves `.named` to the
-    /// bundled custom font, still applying `weight` where the face supports it.
+    /// The font for this role, digit style and italics applied. Resolves `.named`
+    /// to the bundled custom font, still applying `weight` where the face
+    /// supports it. `.postScript` keeps its exact static face and does not apply
+    /// a synthesized weight.
     public var font: Font {
         var f: Font
         switch fontFamily {
@@ -58,18 +67,29 @@ public struct TypeToken: Sendable, Hashable {
             f = Font.system(size: size, weight: weight)
         case .named(let name):
             f = Font.custom(name, size: size).weight(weight)
+        case .postScript(let name):
+            f = Font.custom(name, size: size)
         }
         if monospacedDigit { f = f.monospacedDigit() }
+        if italic { f = f.italic() }
         return f
     }
 }
 
 extension View {
     /// Apply a `TypeToken`'s font, tracking and line spacing in one call.
+    @ViewBuilder
     public func typeToken(_ t: TypeToken) -> some View {
-        self.font(t.font)
-            .tracking(t.trackingPoints)
-            .lineSpacing(t.lineSpacing)
+        if t.italic {
+            self.font(t.font)
+                .italic()
+                .tracking(t.trackingPoints)
+                .lineSpacing(t.lineSpacing)
+        } else {
+            self.font(t.font)
+                .tracking(t.trackingPoints)
+                .lineSpacing(t.lineSpacing)
+        }
     }
 }
 

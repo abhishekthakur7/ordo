@@ -129,16 +129,20 @@ public struct CheckboxSequence: Sendable, Hashable {
     }
 }
 
-/// Row entrance transform: new rows fade in from `translateY` and `scale`.
+/// Row entrance transform: new rows fade in from `translateY`, `scale`, and
+/// an optional blur. The blur defaults to zero so existing themes retain their
+/// current transition exactly.
 public struct RowEntranceTransform: Sendable, Hashable {
     public var translateY: Double  // -8 px
     public var scale: Double       // 0.96
     public var duration: Double    // 360 ms
+    public var blur: Double        // 0 = no blur
 
-    public init(translateY: Double, scale: Double, duration: Double) {
+    public init(translateY: Double, scale: Double, duration: Double, blur: Double = 0) {
         self.translateY = translateY
         self.scale = scale
         self.duration = duration
+        self.blur = blur
     }
 }
 
@@ -153,6 +157,11 @@ public struct Motion: Sendable, Hashable {
     // Named moments (durations from the mockup).
     public var panelEnter: MotionToken          // 340ms ease-out
     public var panelExit: MotionToken           // 220ms ease-out
+    /// Entrance blur in points for opaque surfaces. The default preserves the
+    /// existing unblurred macOS and Arcade panel animation.
+    public var panelEnterBlur: Double
+    /// Exit blur in points for opaque surfaces. Disabled under Reduce Motion.
+    public var panelExitBlur: Double
     public var expandMorph: MotionToken         // 520ms ease-drawer
     public var tabThumb: MotionToken            // 460ms ease-drawer
     public var appearanceThumb: MotionToken     // 420ms ease-drawer (footer .seg-thumb2)
@@ -181,13 +190,16 @@ public struct Motion: Sendable, Hashable {
         strikethrough: MotionToken, titleColorFade: MotionToken, rowEntrance: MotionToken,
         flipMove: MotionToken, ring: MotionToken, appearanceCrossfade: MotionToken,
         hoverFade: MotionToken, pressEcho: MotionToken, counterFade: MotionToken,
-        checkboxSequence: CheckboxSequence, rowEntranceTransform: RowEntranceTransform
+        checkboxSequence: CheckboxSequence, rowEntranceTransform: RowEntranceTransform,
+        panelEnterBlur: Double = 0, panelExitBlur: Double = 0
     ) {
         self.easeOut = easeOut
         self.easeDrawer = easeDrawer
         self.easeIO = easeIO
         self.panelEnter = panelEnter
         self.panelExit = panelExit
+        self.panelEnterBlur = panelEnterBlur
+        self.panelExitBlur = panelExitBlur
         self.expandMorph = expandMorph
         self.tabThumb = tabThumb
         self.appearanceThumb = appearanceThumb
@@ -205,5 +217,12 @@ public struct Motion: Sendable, Hashable {
         self.counterFade = counterFade
         self.checkboxSequence = checkboxSequence
         self.rowEntranceTransform = rowEntranceTransform
+    }
+
+    /// Panel blur is never animated when Reduce Motion is enabled. Consumers
+    /// should use this accessor rather than reading the raw token at render time.
+    public func panelBlur(entering: Bool, reduceMotion: Bool) -> Double {
+        guard !reduceMotion else { return 0 }
+        return entering ? panelEnterBlur : panelExitBlur
     }
 }

@@ -163,6 +163,9 @@ public struct OverlayStyle: Sendable, Hashable {
         case none
         case scanlines
         case lcdGrain
+        /// A static, tiled paper-noise image. Its opacity and blend mode live
+        /// on `GrainStyle`, carried by a paper surface.
+        case paperGrain
     }
 
     public var kind: Kind
@@ -231,11 +234,70 @@ public struct CabinetStyle: Sendable, Hashable {
     }
 }
 
-/// Which panel surface a theme renders: macOS vibrancy/glass (`.vibrancy`) or
-/// an opaque arcade cabinet (`.cabinet`). Mutually exclusive.
+/// A tiled, deterministic noise treatment for a paper surface. An opacity of
+/// zero is an explicit no-grain accessibility fallback.
+public struct GrainStyle: Sendable, Hashable {
+    public enum Blend: Sendable, Hashable {
+        case multiply
+        case overlay
+    }
+
+    /// Opacity of the grain layer (0 disables it).
+    public var opacity: Double
+    /// Blend mode used to composite the grain over the paper fill.
+    public var blend: Blend
+    /// Edge length of one repeated noise tile, in points.
+    public var tile: Double
+
+    public init(opacity: Double, blend: Blend, tile: Double) {
+        self.opacity = opacity
+        self.blend = blend
+        self.tile = tile
+    }
+}
+
+/// An opaque paper panel: a vertical fill, fine border, soft shadow stack,
+/// inset top highlight, and optional tiled grain.
+public struct PaperStyle: Sendable, Hashable {
+    public var fillTop: Color
+    public var fillBottom: Color
+    public var border: Color
+    public var borderWidth: Double
+    public var cornerRadius: Double
+    public var innerHighlight: Color
+    public var shadow: [ShadowLayer]
+    public var grain: GrainStyle
+    public var beakCornerRadius: Double
+
+    public init(
+        fillTop: Color,
+        fillBottom: Color,
+        border: Color,
+        borderWidth: Double,
+        cornerRadius: Double,
+        innerHighlight: Color,
+        shadow: [ShadowLayer],
+        grain: GrainStyle,
+        beakCornerRadius: Double = 0
+    ) {
+        self.fillTop = fillTop
+        self.fillBottom = fillBottom
+        self.border = border
+        self.borderWidth = borderWidth
+        self.cornerRadius = cornerRadius
+        self.innerHighlight = innerHighlight
+        self.shadow = shadow
+        self.grain = grain
+        self.beakCornerRadius = beakCornerRadius
+    }
+}
+
+/// Which panel surface a theme renders: macOS vibrancy/glass (`.vibrancy`),
+/// an opaque arcade cabinet (`.cabinet`), or an opaque paper panel (`.paper`).
 public enum SurfaceStyle: Sendable, Hashable {
     case vibrancy(MaterialIntent)
     case cabinet(CabinetStyle)
+    case paper(PaperStyle)
 }
 
 // MARK: - Palette

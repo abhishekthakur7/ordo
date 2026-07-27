@@ -11,31 +11,38 @@ struct TabBarView: View {
     @Environment(\.ordoTheme) private var theme
     @Environment(\.ordoPalette) private var palette
 
+    @ViewBuilder
     var body: some View {
-        SlidingSegment(
-            options: TaskList.allCases,
-            selection: model.tab,
-            motion: theme.motion.tabThumb,
-            height: 28,
-            cornerRadius: 7,
-            thumbInset: 3,
-            trackCornerRadius: 9, // mockup .tabs border-radius
+        if let tabBarContent = theme.tabBarContent(
+            tab: model.tab,
+            remaining: remaining(for:),
             onSelect: { model.selectTab($0) }
-        ) { tab, isActive in
-            HStack(spacing: 6) {
-                if !theme.showsTabCountBadge {
-                    TabDot(color: labelColor(isActive: isActive), visible: !isActive)
-                }
-                theme.typeScale.tab.styled(label(for: tab))
-                    .foregroundStyle(labelColor(isActive: isActive))
-                if theme.showsTabCountBadge {
-                    CountBadge(count: remaining(for: tab), active: isActive)
+        ) {
+            tabBarContent
+        } else {
+            SlidingSegment(
+                options: TaskList.allCases,
+                selection: model.tab,
+                motion: theme.motion.tabThumb,
+                height: theme.layout.tabHeight,
+                cornerRadius: theme.layout.tabCornerRadius,
+                thumbInset: theme.layout.tabThumbInset,
+                trackCornerRadius: theme.layout.tabTrackCornerRadius,
+                onSelect: { model.selectTab($0) }
+            ) { tab, isActive in
+                HStack(spacing: theme.layout.tabLabelSpacing) {
+                    if !theme.showsTabCountBadge {
+                        TabDot(color: labelColor(isActive: isActive), visible: !isActive)
+                    }
+                    theme.typeScale.tab.styled(label(for: tab))
+                        .foregroundStyle(labelColor(isActive: isActive))
+                    if theme.showsTabCountBadge {
+                        CountBadge(count: remaining(for: tab), active: isActive)
+                    }
                 }
             }
+            .padding(tabInsets)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 6)
     }
 
     private func label(for tab: TaskList) -> String {
@@ -44,6 +51,12 @@ struct TabBarView: View {
 
     private func remaining(for tab: TaskList) -> Int {
         tab == .today ? model.todayRemaining : model.longtermRemaining
+    }
+
+    private var tabInsets: EdgeInsets {
+        let insets = theme.layout.tabInsets
+        return EdgeInsets(top: insets.top, leading: insets.leading,
+                          bottom: insets.bottom, trailing: insets.trailing)
     }
 
     /// The tab label's foreground. Themes without a count badge (Arcade) sit
