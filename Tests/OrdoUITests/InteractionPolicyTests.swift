@@ -16,6 +16,12 @@ final class SpyChrome: PanelChrome {
 @MainActor
 final class InteractionPolicyTests: UIModelTestCase {
 
+    func testTextFieldsDoNotRouteKeysToTaskListShortcuts() {
+        XCTAssertFalse(PanelRootView.acceptsListKeys(focus: .composer, editingTaskID: nil))
+        XCTAssertFalse(PanelRootView.acceptsListKeys(focus: .root, editingTaskID: UUID()))
+        XCTAssertTrue(PanelRootView.acceptsListKeys(focus: .root, editingTaskID: nil))
+    }
+
     /// A store on day 25 with one Today task completed that day, clock advanced to
     /// day 26 so a pending rollover would archive it.
     private func storeWithArchivablyDoneTask() -> TaskStore {

@@ -1,7 +1,3 @@
-// OrdoUI — the scrolling list (mockup .list-scroll / .list): a LazyVStack of open
-// rows, the themed done-section header, done rows, and the theme's empty / all-
-// cleared states. Drag-to-reorder is enabled only in the expanded view (§4.1).
-
 import SwiftUI
 import UniformTypeIdentifiers
 import OrdoCore
@@ -32,18 +28,10 @@ struct TaskListView: View {
                     .padding(listInsets)
                     .transition(.opacity)
             }
-
-            if showsCoveringClearedState {
-                GeometryReader { _ in
-                    clearedState
-                }
-                .transition(.opacity.combined(with: .offset(y: 6)))
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(theme.layout.stageInsets.edgeInsets)
         .padding(.top, theme.layout.stageTopSpacing)
-        .animation(clearedStateAnimation, value: showsCoveringClearedState)
         .animation(completedListAnimation, value: hidesScrollableContent)
     }
 
@@ -104,13 +92,6 @@ struct TaskListView: View {
         }
     }
 
-    private var showsCoveringClearedState: Bool {
-        !model.isFirstRunEmpty
-            && model.isAllClearedToday
-            && theme.clearedStateCoversList
-            && !model.clearedPeek
-    }
-
     /// Zen's absolute `.empty` state belongs to the finite stage viewport, not
     /// to a self-sizing scroll document. Legacy themes retain their historical
     /// in-list first-run treatment.
@@ -119,18 +100,12 @@ struct TaskListView: View {
     }
 
     private var hidesScrollableContent: Bool {
-        showsCoveringClearedState || showsViewportFirstRunState
+        showsViewportFirstRunState
     }
 
     private var firstRunState: some View {
         theme.firstRunEmptyState()
             .padding(stateInsets(theme.layout.emptyStateInsets))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var clearedState: some View {
-        theme.allClearedState(onPeek: revealCompletedList)
-            .padding(stateInsets(theme.layout.clearedStateInsets))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -156,18 +131,8 @@ struct TaskListView: View {
         theme.layout == .legacy ? .init() : insets.edgeInsets
     }
 
-    private var clearedStateAnimation: Animation? {
-        model.reduceMotion ? nil : .easeOut(duration: 0.62)
-    }
-
     private var completedListAnimation: Animation? {
         model.reduceMotion ? nil : .easeOut(duration: 0.38)
-    }
-
-    private func revealCompletedList() {
-        withAnimation(completedListAnimation) {
-            model.clearedPeek = true
-        }
     }
 
     private func row(_ task: OrdoTask, index: Int? = nil) -> some View {

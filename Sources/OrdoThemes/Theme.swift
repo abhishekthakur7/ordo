@@ -101,8 +101,7 @@ public protocol Theme: Sendable {
 
     // MARK: Structural capabilities (defaults keep macOS behavior)
 
-    /// Whether completed rows move into a separate "Completed" section. Default
-    /// `true`. Arcade is `false`: done rows dim in place, in stored order.
+    /// Whether completed rows render in a labeled section instead of the flat list.
     var showsDoneSection: Bool { get }
     /// Whether the tab bar shows a live open-count badge per tab. Default
     /// `true`. Arcade is `false`: a small dot indicator takes its place.

@@ -36,7 +36,7 @@ public final class TaskStore {
     public init(clock: OrdoClock = SystemClock(),
                 persistence: Persistence,
                 scheduler: SaveScheduler,
-                undoWindow: TimeInterval = 10) {
+                undoWindow: TimeInterval = 3) {
         self.clock = clock
         self.persistence = persistence
         self.scheduler = scheduler
@@ -73,7 +73,7 @@ public final class TaskStore {
     /// Convenience initializer using the default debounced scheduler.
     public convenience init(directory: URL,
                             clock: OrdoClock = SystemClock(),
-                            undoWindow: TimeInterval = 10) {
+                            undoWindow: TimeInterval = 3) {
         self.init(clock: clock,
                   persistence: Persistence(directory: directory),
                   scheduler: DebouncedSaveScheduler(),

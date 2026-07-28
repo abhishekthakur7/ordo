@@ -6,6 +6,22 @@ import XCTest
 @MainActor
 final class UndoToastTests: UIModelTestCase {
 
+    func testDefaultToastWindowIsThreeSeconds() throws {
+        let model = AppModel(store: makeStore(undoWindow: 3),
+                             clock: clock,
+                             theme: MacOSTheme(),
+                             settings: settings,
+                             sounds: sounds,
+                             scheduler: scheduler)
+        model.composerText = "Delete me"; model.submitComposer()
+
+        model.delete(try XCTUnwrap(model.openToday.first?.id))
+
+        XCTAssertEqual(try XCTUnwrap(model.undoToast).expiresAt.timeIntervalSince(clock.now),
+                       3,
+                       accuracy: 0.001)
+    }
+
     func testToastPersistsBeforeExpiry() {
         let model = makeModel(store: makeStore(undoWindow: 10), undoWindow: 10)
         model.composerText = "Delete me"; model.submitComposer()
@@ -59,6 +75,17 @@ final class UndoToastTests: UIModelTestCase {
         clock.advance(by: 11)
         scheduler.fireAll()
         XCTAssertEqual(model.openToday.count, 1)
+        XCTAssertNil(model.undoToast)
+    }
+
+    func testClosingPanelDismissesToastImmediately() {
+        let model = makeModel(store: makeStore(undoWindow: 10), undoWindow: 10)
+        model.composerText = "Delete me"; model.submitComposer()
+        model.delete(model.openToday[0].id)
+        XCTAssertNotNil(model.undoToast)
+
+        model.panelDidClose()
+
         XCTAssertNil(model.undoToast)
     }
 }

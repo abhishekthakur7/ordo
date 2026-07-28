@@ -72,6 +72,11 @@ public struct PanelRootView: View {
         }
         .onChange(of: reduceMotion) { _, new in model.reduceMotion = new }
         .onChange(of: systemScheme) { _, new in model.systemIsDark = new == .dark }
+        .onChange(of: focus) { _, new in
+            if new == .composer {
+                model.selectedID = nil
+            }
+        }
     }
 
     // MARK: Rail
@@ -197,6 +202,10 @@ public struct PanelRootView: View {
             }
         }
 
+        if !Self.acceptsListKeys(focus: focus, editingTaskID: model.editingTaskID) {
+            return .ignored
+        }
+
         switch press.key {
         case .upArrow: model.moveSelection(.up); return .handled
         case .downArrow: model.moveSelection(.down); return .handled
@@ -227,6 +236,10 @@ public struct PanelRootView: View {
             return .handled
         }
         return .ignored
+    }
+
+    static func acceptsListKeys(focus: PanelFocus?, editingTaskID: UUID?) -> Bool {
+        focus != .composer && editingTaskID == nil
     }
 
     private func focusComposer() { focus = .composer }

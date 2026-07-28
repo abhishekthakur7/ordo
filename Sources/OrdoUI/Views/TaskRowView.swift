@@ -10,7 +10,7 @@ struct TaskRowView: View {
     @Bindable var model: AppModel
     let task: OrdoTask
     let expanded: Bool
-    /// 1-based position in the active tab's stored order. Only used by cabinet
+    /// 1-based position in the active tab's display order. Only used by cabinet
     /// rows, to drive the pixel "01"/"02" trailing index badge.
     var index: Int? = nil
 

@@ -55,14 +55,8 @@ public final class AppModel {
     /// Done rows for the active tab.
     public var doneRows: [OrdoTask] { tab == .today ? doneToday : doneLongterm }
 
-    /// All active-tab tasks in stored order, for themes where
-    /// `showsDoneSection == false`, which render one flat list. Observed snapshots
-    /// provide row values; the store supplies canonical ID order.
     public var allRows: [OrdoTask] {
-        let currentRows = Dictionary(
-            uniqueKeysWithValues: (openRows + doneRows).map { ($0.id, $0) }
-        )
-        return store.tasks(in: tab).compactMap { currentRows[$0.id] }
+        openRows + doneRows
     }
 
     // MARK: View state
@@ -148,7 +142,7 @@ public final class AppModel {
                 settings: AppSettings,
                 sounds: SoundPlaying,
                 scheduler: UIScheduler = MainQueueScheduler(),
-                undoWindow: TimeInterval = 10) {
+                undoWindow: TimeInterval = 3) {
         self.store = store
         self.clock = clock
         self.theme = theme
@@ -184,10 +178,9 @@ public final class AppModel {
         rebuild()
     }
 
-    /// Panel closed: commit any active inline edit (blur commits per §4.1 — an empty
-    /// edit still cancels), run deferred rollover/reload, then flush to disk.
     public func panelDidClose() {
         commitEditing()
+        undoToast = nil
         drainDeferred()
         store.flush()
     }

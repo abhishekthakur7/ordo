@@ -54,7 +54,7 @@ final class AppModelTests: UIModelTestCase {
         XCTAssertEqual(model.doneToday.count, 0)
     }
 
-    func testZenPathCompletionUpdatesFlatRowsInStoreOrderImmediately() {
+    func testZenPathCompletionMovesTaskBelowIncompleteRowsImmediately() {
         let store = makeStore()
         let model = makeZenModel(store: store)
         model.selectTab(.longterm)
@@ -68,9 +68,8 @@ final class AppModelTests: UIModelTestCase {
         model.toggle(targetID)
 
         XCTAssertEqual(model.longtermRemaining, 2)
-        XCTAssertEqual(model.allRows.map(\.id), canonicalIDs)
-        XCTAssertEqual(model.allRows.firstIndex(where: { $0.id == targetID }), 1)
-        XCTAssertTrue(model.allRows[1].done)
+        XCTAssertEqual(model.allRows.map(\.id), [canonicalIDs[0], canonicalIDs[2], targetID])
+        XCTAssertEqual(model.allRows.map(\.done), [false, false, true])
     }
 
     func testZenPathUncheckUpdatesFlatRowsImmediately() {
@@ -93,7 +92,7 @@ final class AppModelTests: UIModelTestCase {
         XCTAssertFalse(model.allRows[1].done)
     }
 
-    func testZenTodayFlatRowsKeepCanonicalOrderAcrossCompleteAndUncheck() {
+    func testZenTodayFlatRowsKeepIncompleteTasksBeforeCompletedTasks() {
         let store = makeStore()
         let model = makeZenModel(store: store)
         model.composerText = "First"; model.submitComposer()
@@ -106,13 +105,27 @@ final class AppModelTests: UIModelTestCase {
         model.toggle(firstID)
         model.toggle(thirdID)
 
-        XCTAssertEqual(model.allRows.map(\.id), store.tasks(in: .today).map(\.id))
-        XCTAssertEqual(model.allRows.map(\.done), [true, false, true])
+        XCTAssertEqual(model.allRows.map(\.id), [canonicalIDs[1], firstID, thirdID])
+        XCTAssertEqual(model.allRows.map(\.done), [false, true, true])
 
         model.toggle(firstID)
 
-        XCTAssertEqual(model.allRows.map(\.id), store.tasks(in: .today).map(\.id))
+        XCTAssertEqual(model.allRows.map(\.id), [firstID, canonicalIDs[1], thirdID])
         XCTAssertEqual(model.allRows.map(\.done), [false, false, true])
+    }
+
+    func testZenKeepsEveryRowVisibleWhenAllTasksAreCompleted() {
+        let store = makeStore()
+        let model = makeZenModel(store: store)
+        model.composerText = "First"; model.submitComposer()
+        model.composerText = "Second"; model.submitComposer()
+
+        let ids = model.allRows.map(\.id)
+        ids.forEach(model.toggle)
+
+        XCTAssertTrue(model.isAllClearedToday)
+        XCTAssertEqual(model.allRows.map(\.id), ids)
+        XCTAssertTrue(model.allRows.allSatisfy(\.done))
     }
 
     func testDeleteAndUndoReflectedInRows() {

@@ -1,5 +1,4 @@
-// OrdoUI — the soft-delete undo toast (§2.2, §4.1): a theme-tokened banner with an
-// Undo action, shown for ~10s (clock-driven expiry in AppModel). No dialogs.
+// AppModel owns expiration rather than this view.
 
 import SwiftUI
 import OrdoThemes
