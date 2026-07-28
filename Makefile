@@ -18,7 +18,7 @@ run: app
 	open dist/Ordo.app
 
 install: app
-	ditto dist/Ordo.app /Applications/Ordo.app
+	sudo ditto dist/Ordo.app /Applications/Ordo.app
 	@echo "installed /Applications/Ordo.app"
 
 xcodebuild-check:
