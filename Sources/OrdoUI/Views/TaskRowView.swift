@@ -30,6 +30,7 @@ struct TaskRowView: View {
     private var isEditing: Bool { model.editingTaskID == task.id }
     private var age: Int { model.age(of: task) }
     private var triage: Bool { model.isInTriage(task) }
+    private var isPinned: Bool { task.pinned }
 
     /// A trailing accessory reserves its own gutter; avoid double-reserving Zen's seal.
     private var titleTrailingPadding: CGFloat {
@@ -209,6 +210,9 @@ struct TaskRowView: View {
 
     private var trailing: some View {
         HStack(spacing: theme.layout.rowTrailingSpacing) {
+            if isPinned {
+                pinnedIndicator
+            }
             if let accessory = theme.rowTrailingAccessory(done: task.done, age: age, triage: triage, index: index) {
                 accessory
             } else if age >= 1 {
@@ -224,6 +228,15 @@ struct TaskRowView: View {
         .animation(theme.motion.hoverFade.animation(reduceMotion: reduceMotion), value: hover)
     }
 
+    private var pinnedIndicator: some View {
+        Image(systemName: "pin.fill")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(palette.accent)
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(palette.accentSoft))
+            .accessibilityHidden(true)
+    }
+
     /// Cabinet-only pixel index badge ("01", "02", …), zero-padded to 2 digits.
     private func indexBadge(_ index: Int) -> some View {
         Text(String(format: "%02d", index))
@@ -234,6 +247,11 @@ struct TaskRowView: View {
 
     private var rowActions: some View {
         HStack(spacing: theme.layout.rowActionsSpacing) {
+            IconButton(action: { model.togglePinned(task.id) },
+                       size: 24, cornerRadius: 6,
+                       accessibilityLabel: task.pinned ? UIStrings.actionUnpin : UIStrings.actionPin) {
+                StrokeIcon(systemName: task.pinned ? "pin.slash" : "pin", size: 13)
+            }
             IconButton(action: { model.tab == .today ? model.demote(task.id) : model.promote(task.id) },
                        size: 24, cornerRadius: 6,
                        accessibilityLabel: model.tab == .today ? UIStrings.actionMoveToLongterm : UIStrings.actionDoToday) {
@@ -315,6 +333,7 @@ struct TaskRowView: View {
     private var accessibilityLabel: String {
         var parts = [task.title]
         parts.append(task.done ? "done" : "not done")
+        if task.pinned { parts.append("pinned") }
         if age >= 1 { parts.append("carried over \(age) day\(age == 1 ? "" : "s")") }
         if triage { parts.append("needs triage") }
         return parts.joined(separator: ", ")
@@ -324,6 +343,7 @@ struct TaskRowView: View {
     private var accessibilityActions: some View {
         Button(task.done ? UIStrings.actionReopen : UIStrings.actionComplete) { model.toggle(task.id) }
         Button(UIStrings.actionEdit) { model.beginEditing(task.id) }
+        Button(task.pinned ? UIStrings.actionUnpin : UIStrings.actionPin) { model.togglePinned(task.id) }
         if model.tab == .today {
             Button(UIStrings.actionMoveToLongterm) { model.demote(task.id) }
         } else {

@@ -41,9 +41,9 @@ public final class AppModel {
 
     // MARK: Exposed row state (the single source the list binds to)
 
-    /// Open (not done) Today tasks, sorted by order.
+    /// Open (not done) Today tasks, pinned first then by manual order.
     public private(set) var openToday: [OrdoTask] = []
-    /// Done (still-live) Today tasks, sorted by order.
+    /// Done (still-live) Today tasks, pinned first then by manual order.
     public private(set) var doneToday: [OrdoTask] = []
     /// Open long-term tasks.
     public private(set) var openLongterm: [OrdoTask] = []
@@ -383,6 +383,11 @@ public final class AppModel {
         }
     }
 
+    public func togglePinned(_ id: UUID) {
+        let change = store.togglePinned(id)
+        applyChange(change, animation: theme.motion.flipMove)
+    }
+
     // MARK: Inline edit (§4.1)
 
     public func beginEditing(_ id: UUID) {
@@ -446,10 +451,16 @@ public final class AppModel {
 
     // MARK: Reorder (expanded view, §4.1)
 
-    /// Move a task within its list to a new visible index (open-section order).
+    /// Move a task within its visible pin and completion group to a new index.
     public func move(_ id: UUID, toIndex index: Int) {
         let change = store.move(id, toIndex: index)
         applyChange(change, animation: theme.motion.flipMove)
+    }
+
+    /// Reordering is constrained to the task's pin and completion group.
+    func reorderableRows(for task: OrdoTask) -> [OrdoTask] {
+        let section = task.done ? doneRows : openRows
+        return section.filter { $0.pinned == task.pinned }
     }
 
     /// The index to hand `store.move` so a dragged row lands at the target's visual

@@ -92,11 +92,16 @@ public final class TaskStore {
 
     // MARK: Queries
 
-    /// Tasks in a list, sorted by `order`, excluding soft-delete tombstones.
+    /// Live tasks in a list, pinned first and ordered within each pin group.
     public func tasks(in list: TaskList) -> [OrdoTask] {
         state.tasks
             .filter { $0.list == list && $0.deletedAt == nil }
-            .sorted { $0.order < $1.order }
+            .sorted {
+                if $0.pinned != $1.pinned {
+                    return $0.pinned
+                }
+                return $0.order < $1.order
+            }
     }
 
     /// A live task by id, or nil if missing or tombstoned.
@@ -184,6 +189,14 @@ public final class TaskStore {
         return setDone(id, !t.done)
     }
 
+    @discardableResult
+    public func togglePinned(_ id: UUID) -> ChangeSet {
+        guard let i = liveIndex(id) else { return .empty }
+        state.tasks[i].pinned.toggle()
+        scheduleSave()
+        return ChangeSet(updated: [id])
+    }
+
     /// Edits a title. Trims/caps; an empty commit is a no-op (not a delete).
     @discardableResult
     public func editTitle(_ id: UUID, to rawTitle: String) -> ChangeSet {
@@ -220,19 +233,30 @@ public final class TaskStore {
 
     // MARK: Mutations — reorder
 
-    /// Moves a task to `index` within its list (fractional order; renormalizes
-    /// when neighbor gaps get too tight, ARCHITECTURE §3.5).
+    /// Moves a task within its pin and completion group using fractional order
+    /// (renormalizing tight neighbor gaps per ARCHITECTURE §3.5).
     @discardableResult
     public func move(_ id: UUID, toIndex index: Int) -> ChangeSet {
         guard let moving = liveTask(id) else { return .empty }
         let list = moving.list
-        let siblings = tasks(in: list).filter { $0.id != id }
+        let group = tasks(in: list).filter {
+            $0.pinned == moving.pinned && $0.done == moving.done
+        }
+        let siblings = group.filter { $0.id != id }
         let clamped = max(0, min(index, siblings.count))
+        var desired = siblings
+        desired.insert(moving, at: clamped)
+        guard desired.map(\.id) != group.map(\.id) else { return .empty }
+
         let before = clamped > 0 ? siblings[clamped - 1].order : nil
         let after = clamped < siblings.count ? siblings[clamped].order : nil
 
         if let b = before, let a = after, (a - b) < TaskStore.minOrderGap {
-            return renormalizeAndPlace(id: id, at: clamped, list: list)
+            return renormalizeAndPlace(id: id,
+                                       at: clamped,
+                                       list: list,
+                                       pinned: moving.pinned,
+                                       done: moving.done)
         }
         let newOrder: Double
         switch (before, after) {
@@ -246,9 +270,15 @@ public final class TaskStore {
         return ChangeSet(moved: [id])
     }
 
-    private func renormalizeAndPlace(id: UUID, at index: Int, list: TaskList) -> ChangeSet {
+    private func renormalizeAndPlace(id: UUID,
+                                     at index: Int,
+                                     list: TaskList,
+                                     pinned: Bool,
+                                     done: Bool) -> ChangeSet {
         guard let moving = liveTask(id) else { return .empty }
-        var ordered = tasks(in: list).filter { $0.id != id }
+        var ordered = tasks(in: list).filter {
+            $0.id != id && $0.pinned == pinned && $0.done == done
+        }
         let idx = max(0, min(index, ordered.count))
         ordered.insert(moving, at: idx)
         var updated: [UUID] = []

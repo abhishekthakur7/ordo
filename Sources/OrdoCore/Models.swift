@@ -20,6 +20,7 @@ public struct OrdoTask: Hashable, Sendable, Identifiable, Codable {
     public var title: String
     public var list: TaskList
     public var done: Bool
+    public var pinned: Bool
     /// The instant the task was created (UTC).
     public var createdAt: Date
     /// The logical day the task entered the Today list; nil for long-term tasks.
@@ -49,6 +50,7 @@ public struct OrdoTask: Hashable, Sendable, Identifiable, Codable {
                 title: String,
                 list: TaskList,
                 done: Bool = false,
+                pinned: Bool = false,
                 createdAt: Date,
                 addedToTodayOn: DayKey? = nil,
                 completedAt: Date? = nil,
@@ -61,6 +63,7 @@ public struct OrdoTask: Hashable, Sendable, Identifiable, Codable {
         self.title = title
         self.list = list
         self.done = done
+        self.pinned = pinned
         self.createdAt = createdAt
         self.addedToTodayOn = addedToTodayOn
         self.completedAt = completedAt
@@ -74,7 +77,7 @@ public struct OrdoTask: Hashable, Sendable, Identifiable, Codable {
     // MARK: Codable with unknown-field preservation
 
     private static let knownKeys: Set<String> = [
-        "id", "title", "list", "done", "createdAt", "addedToTodayOn",
+        "id", "title", "list", "done", "pinned", "createdAt", "addedToTodayOn",
         "completedAt", "order", "origin", "triageKeptOn", "deletedAt",
     ]
 
@@ -84,6 +87,7 @@ public struct OrdoTask: Hashable, Sendable, Identifiable, Codable {
         title = try c.decode(String.self, forKey: AnyCodingKey("title"))
         list = try c.decode(TaskList.self, forKey: AnyCodingKey("list"))
         done = try c.decodeIfPresent(Bool.self, forKey: AnyCodingKey("done")) ?? false
+        pinned = try c.decodeIfPresent(Bool.self, forKey: AnyCodingKey("pinned")) ?? false
         createdAt = try c.decode(Date.self, forKey: AnyCodingKey("createdAt"))
         addedToTodayOn = try c.decodeIfPresent(DayKey.self, forKey: AnyCodingKey("addedToTodayOn"))
         completedAt = try c.decodeIfPresent(Date.self, forKey: AnyCodingKey("completedAt"))
@@ -100,6 +104,7 @@ public struct OrdoTask: Hashable, Sendable, Identifiable, Codable {
         try c.encode(title, forKey: AnyCodingKey("title"))
         try c.encode(list, forKey: AnyCodingKey("list"))
         try c.encode(done, forKey: AnyCodingKey("done"))
+        try c.encode(pinned, forKey: AnyCodingKey("pinned"))
         try c.encode(createdAt, forKey: AnyCodingKey("createdAt"))
         try c.encodeIfPresent(addedToTodayOn, forKey: AnyCodingKey("addedToTodayOn"))
         try c.encodeIfPresent(completedAt, forKey: AnyCodingKey("completedAt"))

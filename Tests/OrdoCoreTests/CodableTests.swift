@@ -49,6 +49,7 @@ final class CodableTests: XCTestCase {
         """.utf8)
         let task = try d.decode(OrdoTask.self, from: json)
         XCTAssertFalse(task.done)
+        XCTAssertFalse(task.pinned)
         XCTAssertNil(task.completedAt)
         XCTAssertNil(task.origin)
     }

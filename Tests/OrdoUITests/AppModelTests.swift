@@ -170,6 +170,59 @@ final class AppModelTests: UIModelTestCase {
         XCTAssertEqual(model.openLongterm[0].id, id)
     }
 
+    func testHorizonPinsLeadWithinTheirExistingSectionsAcrossThemes() {
+        let themes: [any Theme] = [MacOSTheme(), ArcadeTheme(), ZenInkTheme()]
+
+        for theme in themes {
+            let themeDir = UT.tempDir()
+            defer { UT.cleanup(themeDir) }
+            let themeScheduler = ManualUIScheduler()
+            let store = TaskStore(clock: clock,
+                                  persistence: Persistence(directory: themeDir),
+                                  scheduler: ImmediateSaveScheduler())
+            let model = AppModel(store: store,
+                                 clock: clock,
+                                 theme: theme,
+                                 settings: settings,
+                                 sounds: sounds,
+                                 scheduler: themeScheduler)
+            model.selectTab(.longterm)
+            ["First", "Second", "Third", "Fourth"].forEach {
+                model.composerText = $0
+                model.submitComposer()
+            }
+            let ids = model.openLongterm.map(\.id)
+
+            model.togglePinned(ids[1])
+            model.togglePinned(ids[3])
+            XCTAssertEqual(model.openLongterm.map(\.id), [ids[1], ids[3], ids[0], ids[2]], "\(theme.displayName) open section")
+
+            model.toggle(ids[0])
+            model.toggle(ids[2])
+            themeScheduler.fireAll()
+            model.togglePinned(ids[2])
+
+            XCTAssertEqual(model.openLongterm.map(\.id), [ids[1], ids[3]], "\(theme.displayName) open section after completion")
+            XCTAssertEqual(model.doneLongterm.map(\.id), [ids[2], ids[0]], "\(theme.displayName) completed section")
+        }
+    }
+
+    func testPinRebuildsTodayRowsAheadOfUnpinnedTasks() {
+        let model = makeModel(store: makeStore())
+        model.composerText = "First"; model.submitComposer()
+        model.composerText = "Second"; model.submitComposer()
+        let first = model.openToday[0].id
+        let second = model.openToday[1].id
+
+        model.togglePinned(second)
+
+        XCTAssertEqual(model.openToday.map(\.id), [second, first])
+        XCTAssertTrue(model.openToday[0].pinned)
+
+        model.togglePinned(second)
+        XCTAssertEqual(model.openToday.map(\.id), [first, second])
+    }
+
     // MARK: Tab badges
 
     func testRemainingCountsPerTab() {

@@ -177,14 +177,22 @@ private struct ReorderDropDelegate: DropDelegate {
     @Binding var draggingID: UUID?
 
     func dropEntered(info: DropInfo) {
-        guard let dragging = draggingID, dragging != target.id else { return }
-        let ids = model.store.tasks(in: model.tab).map(\.id)
+        guard let dragging = draggingID,
+              dragging != target.id,
+              let draggingTask = model.store.task(id: dragging),
+              canReorder(draggingTask) else { return }
+        let ids = model.reorderableRows(for: draggingTask).map(\.id)
         guard let toIndex = AppModel.reorderIndex(orderedIDs: ids, dragging: dragging, target: target.id) else { return }
         model.move(dragging, toIndex: toIndex)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        guard let dragging = draggingID,
+              let draggingTask = model.store.task(id: dragging),
+              canReorder(draggingTask) else {
+            return DropProposal(operation: .forbidden)
+        }
+        return DropProposal(operation: .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {
@@ -198,5 +206,9 @@ private struct ReorderDropDelegate: DropDelegate {
         // would otherwise leave `isDragging` stuck true and wedge the defer system.
         // Clearing it here is safe: re-entering a row re-arms the drag via onDrag.
         model.isDragging = false
+    }
+
+    private func canReorder(_ dragging: OrdoTask) -> Bool {
+        dragging.pinned == target.pinned && dragging.done == target.done
     }
 }

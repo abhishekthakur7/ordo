@@ -28,6 +28,8 @@ enum UIStrings {
     static let actionDoToday = "Do today"
     static let actionMoveToLongterm = "Move to Long-term"
     static let actionEdit = "Edit"
+    static let actionPin = "Pin"
+    static let actionUnpin = "Unpin"
 
     // Undo toast
     static let undoDeletedPrefix = "Deleted"

@@ -57,6 +57,44 @@ final class TaskStoreTests: CoreTestCase {
         XCTAssertFalse(store.task(id: t)!.done)
     }
 
+    func testTogglePinnedPrioritizesTodayTasksAndPersists() {
+        let store = makeStore()
+        let first = store.add("first", to: .today).inserted[0]
+        let second = store.add("second", to: .today).inserted[0]
+        let third = store.add("third", to: .today).inserted[0]
+
+        XCTAssertEqual(store.togglePinned(third).updated, [third])
+        XCTAssertTrue(store.task(id: third)?.pinned == true)
+        XCTAssertEqual(store.tasks(in: .today).map(\.id), [third, first, second])
+
+        store.flush()
+        let reopened = makeStore()
+        XCTAssertTrue(reopened.task(id: third)?.pinned == true)
+        XCTAssertEqual(reopened.tasks(in: .today).map(\.id), [third, first, second])
+
+        XCTAssertEqual(reopened.togglePinned(third).updated, [third])
+        XCTAssertFalse(reopened.task(id: third)?.pinned == true)
+        XCTAssertEqual(reopened.tasks(in: .today).map(\.id), [first, second, third])
+    }
+
+    func testTogglePinnedPrioritizesHorizonTasksAndPersists() {
+        let store = makeStore()
+        let first = store.add("first", to: .longterm).inserted[0]
+        let second = store.add("second", to: .longterm).inserted[0]
+        let third = store.add("third", to: .longterm).inserted[0]
+        let fourth = store.add("fourth", to: .longterm).inserted[0]
+
+        store.togglePinned(second)
+        store.togglePinned(fourth)
+        XCTAssertEqual(store.tasks(in: .longterm).map(\.id), [second, fourth, first, third])
+
+        store.flush()
+        let reopened = makeStore()
+        XCTAssertEqual(reopened.tasks(in: .longterm).map(\.id), [second, fourth, first, third])
+        XCTAssertTrue(reopened.task(id: second)?.pinned == true)
+        XCTAssertTrue(reopened.task(id: fourth)?.pinned == true)
+    }
+
     func testEditTitleEmptyCommitIsNoOpNotDelete() {
         let store = makeStore()
         let t = store.add("keep", to: .today).inserted[0]
@@ -118,6 +156,27 @@ final class TaskStoreTests: CoreTestCase {
         // move a to the end
         store.move(a, toIndex: 2)
         XCTAssertEqual(store.tasks(in: .today).map { $0.id }, [c, b, a])
+    }
+
+    func testMoveReordersOnlyWithinMatchingPinAndCompletionGroup() {
+        let store = makeStore()
+        let a = store.add("a", to: .today).inserted[0]
+        let b = store.add("b", to: .today).inserted[0]
+        let c = store.add("c", to: .today).inserted[0]
+        let d = store.add("d", to: .today).inserted[0]
+        store.togglePinned(b)
+        store.togglePinned(d)
+
+        store.move(d, toIndex: 0)
+        XCTAssertEqual(store.tasks(in: .today).map(\.id), [d, b, a, c])
+
+        store.move(c, toIndex: 0)
+        XCTAssertEqual(store.tasks(in: .today).map(\.id), [d, b, c, a])
+
+        store.toggleDone(b)
+        store.move(b, toIndex: 0)
+        XCTAssertEqual(store.tasks(in: .today).map(\.id), [d, b, c, a])
+        XCTAssertEqual(store.task(id: d)?.order, 1)
     }
 
     // PLAN §5: fractional-order renormalization when gaps get tight.
